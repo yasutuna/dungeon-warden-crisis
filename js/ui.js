@@ -20,6 +20,9 @@ class UIManager {
         this.lastPaused = null;
         this.lastScore = -1;
 
+        // 通知管理
+        this.activeNotifications = []; // アクティブな通知要素の配列
+
         // DOM要素のキャッシュ（パフォーマンス最適化）
         this.elements = {
             soulDisplay: document.getElementById('soul-display'),
@@ -621,22 +624,10 @@ class UIManager {
     }
 
     showMessage(text, type = 'info') {
-        // メッセージ表示（簡易版）
+        // メッセージ表示（重ならないように縦に並べる）
         const messageDiv = document.createElement('div');
         messageDiv.textContent = text;
-        messageDiv.style.cssText = `
-            position: fixed;
-            top: 80px;
-            left: 50%;
-            transform: translateX(-50%);
-            padding: 10px 20px;
-            border-radius: 5px;
-            color: white;
-            font-weight: bold;
-            z-index: 1000;
-            animation: fadeInOut 2s ease-in-out;
-            pointer-events: none;
-        `;
+        messageDiv.className = 'game-notification';
 
         // タイプによって色を変更
         const colors = {
@@ -647,12 +638,41 @@ class UIManager {
         };
         messageDiv.style.backgroundColor = colors[type] || colors.info;
 
+        // 通知を配列に追加
+        this.activeNotifications.push(messageDiv);
+
+        // 位置を計算して配置
+        this.updateNotificationPositions();
+
         document.body.appendChild(messageDiv);
 
-        // 2秒後に削除
+        // アニメーション後に削除（2.5秒）
         setTimeout(() => {
-            messageDiv.remove();
-        }, 2000);
+            messageDiv.classList.add('notification-fade-out');
+
+            // フェードアウト完了後に削除
+            setTimeout(() => {
+                messageDiv.remove();
+                // 配列から削除
+                const index = this.activeNotifications.indexOf(messageDiv);
+                if (index > -1) {
+                    this.activeNotifications.splice(index, 1);
+                }
+                // 残りの通知の位置を再計算
+                this.updateNotificationPositions();
+            }, 300);
+        }, 2500);
+    }
+
+    updateNotificationPositions() {
+        // 各通知の位置を更新（上から順に配置）
+        const baseTop = 80; // 最初の通知の位置
+        const spacing = 10; // 通知間のスペース
+
+        this.activeNotifications.forEach((notification, index) => {
+            const offset = index * (50 + spacing); // 通知の高さ(50px) + スペース
+            notification.style.top = `${baseTop + offset}px`;
+        });
     }
 
     update() {
