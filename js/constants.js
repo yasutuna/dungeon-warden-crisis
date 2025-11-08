@@ -132,9 +132,9 @@ const UI_CONSTANTS = {
 
 // グリッド定数
 const GRID_CONSTANTS = {
-    COLS: 16,
-    ROWS: 12,
-    TILE_SIZE: 50,
+    COLS: 20,
+    ROWS: 15,
+    TILE_SIZE: 40,
     GRID_LINE_WIDTH: 1,
     TRAP_PLACEMENT_TOLERANCE: 0.6,
     MINE_TRIGGER_RANGE: 0.5

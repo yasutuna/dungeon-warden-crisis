@@ -353,6 +353,13 @@ class Game {
 
             console.log(`Trap placed successfully! New soul: ${this.soul}`);
             this.ui.showMessage(`${trapData.name}を配置しました`, 'success');
+
+            // 配置モードをリセット
+            this.placementMode = null;
+            this.ui.selectedTrap = null;
+            document.querySelectorAll('.palette-item').forEach(item => {
+                item.classList.remove('selected');
+            });
         } else {
             console.log('Failed to place trap');
             this.ui.showMessage('罠の配置に失敗しました', 'error');
@@ -501,6 +508,13 @@ class Game {
             this.quadtreeDirty = true;
 
             this.ui.showMessage(`${monsterData.name} Lv.${maxLevel}を召喚しました`, 'success');
+
+            // 配置モードをリセット
+            this.placementMode = null;
+            this.ui.selectedMonster = null;
+            document.querySelectorAll('.palette-item').forEach(item => {
+                item.classList.remove('selected');
+            });
         }
     }
 
@@ -1027,9 +1041,18 @@ class Game {
         const tile = this.grid.getTile(gx, gy);
         if (!tile) return false;
 
-        // パス上のタイルでない場合は移動不可
-        if (tile.type !== 'path') {
-            return false;
+        // 飛行ユニットの場合
+        if (monster.flying) {
+            // elevated、path、spawn、coreに移動可能（empty、pitは不可）
+            if (tile.type !== 'elevated' && tile.type !== 'path' &&
+                tile.type !== 'spawn' && tile.type !== 'core') {
+                return false;
+            }
+        } else {
+            // 地上ユニットの場合: path、spawn、coreにのみ移動可能
+            if (tile.type !== 'path' && tile.type !== 'spawn' && tile.type !== 'core') {
+                return false;
+            }
         }
 
         // 既に別のモンスターがいる場合は移動不可
