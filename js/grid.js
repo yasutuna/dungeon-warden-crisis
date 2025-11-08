@@ -89,47 +89,115 @@ class Grid {
     }
 
     setupStraightPath() {
-        // 2マス幅の一本道パスの作成（左から右へ）
-        const pathY = Math.floor(this.rows / 2);
-
-        // スポーン地点（2マス幅）
-        this.tiles[pathY][0].type = 'spawn';
-        this.tiles[pathY + 1][0].type = 'spawn';
-
-        // パス（2マス幅）
-        for (let x = 1; x < this.cols - 1; x++) {
-            this.tiles[pathY][x].type = 'path';
-            this.tiles[pathY + 1][x].type = 'path';
-        }
-
-        // コア（2マス幅）
-        this.tiles[pathY][this.cols - 1].type = 'core';
-        this.tiles[pathY + 1][this.cols - 1].type = 'core';
-
-        // 高台を2箇所追加（飛行モンスター配置用）
-        if (pathY > 2) {
-            this.tiles[pathY - 2][Math.floor(this.cols / 3)].type = 'elevated';
-            this.tiles[pathY - 2][Math.floor(this.cols * 2 / 3)].type = 'elevated';
-        }
-
-        // 溝を2箇所追加（押し出しコンボ用）
-        if (pathY + 1 < this.rows - 2) {
-            this.tiles[pathY + 3][Math.floor(this.cols / 3)].type = 'pit';
-            this.tiles[pathY + 3][Math.floor(this.cols * 2 / 3)].type = 'pit';
-        }
-
-        // パスの経路リストを作成（2マス幅を考慮）
+        // 戦略的な迷路風パス - 紫マスの空戦ルートと落とし穴を含む
         this.pathTiles = [];
-        for (let x = 0; x < this.cols; x++) {
-            this.pathTiles.push({ x: x, y: pathY });
-            this.pathTiles.push({ x: x, y: pathY + 1 });
+        const midY = Math.floor(this.rows / 2);
+
+        // スポーン地点（左中央）
+        this.tiles[midY][0].type = 'spawn';
+        this.tiles[midY + 1][0].type = 'spawn';
+        this.pathTiles.push({ x: 0, y: midY });
+        this.pathTiles.push({ x: 0, y: midY + 1 });
+
+        // メインルート - 迷路状に蛇行
+        // 第1区間: 右へ進んで上に曲がる
+        for (let x = 1; x <= 4; x++) {
+            this.tiles[midY][x].type = 'path';
+            this.tiles[midY + 1][x].type = 'path';
+            this.tiles[midY][x].walkable = true;
+            this.tiles[midY + 1][x].walkable = true;
+            this.pathTiles.push({ x, y: midY });
+            this.pathTiles.push({ x, y: midY + 1 });
+        }
+
+        // 落とし穴1: ルート上に配置（押し出しトラップ用）
+        this.tiles[midY + 2][3].type = 'pit';
+
+        // 上方向への曲がり
+        for (let y = midY - 1; y >= 3; y--) {
+            this.tiles[y][4].type = 'path';
+            this.tiles[y][5].type = 'path';
+            this.tiles[y][4].walkable = true;
+            this.tiles[y][5].walkable = true;
+            this.pathTiles.push({ x: 4, y });
+            this.pathTiles.push({ x: 5, y });
+        }
+
+        // 第2区間: 右へ進む
+        for (let x = 6; x <= 9; x++) {
+            this.tiles[3][x].type = 'path';
+            this.tiles[4][x].type = 'path';
+            this.tiles[3][x].walkable = true;
+            this.tiles[4][x].walkable = true;
+            this.pathTiles.push({ x, y: 3 });
+            this.pathTiles.push({ x, y: 4 });
+        }
+
+        // 落とし穴2: ルート上に配置
+        this.tiles[2][7].type = 'pit';
+        this.tiles[5][8].type = 'pit';
+
+        // 下方向への曲がり
+        for (let y = 5; y <= midY + 1; y++) {
+            this.tiles[y][9].type = 'path';
+            this.tiles[y][10].type = 'path';
+            this.tiles[y][9].walkable = true;
+            this.tiles[y][10].walkable = true;
+            this.pathTiles.push({ x: 9, y });
+            this.pathTiles.push({ x: 10, y });
+        }
+
+        // 第3区間: ゴールへ
+        for (let x = 11; x < this.cols - 1; x++) {
+            this.tiles[midY][x].type = 'path';
+            this.tiles[midY + 1][x].type = 'path';
+            this.tiles[midY][x].walkable = true;
+            this.tiles[midY + 1][x].walkable = true;
+            this.pathTiles.push({ x, y: midY });
+            this.pathTiles.push({ x, y: midY + 1 });
+        }
+
+        // 落とし穴3: ゴール手前
+        this.tiles[midY + 2][13].type = 'pit';
+
+        // コア（右中央）
+        this.tiles[midY][this.cols - 1].type = 'core';
+        this.tiles[midY + 1][this.cols - 1].type = 'core';
+        this.pathTiles.push({ x: this.cols - 1, y: midY });
+        this.pathTiles.push({ x: this.cols - 1, y: midY + 1 });
+
+        // 紫マス（elevated） - 空戦ユニット専用の迂回路
+        // 上部に連続した空中ルートを作成
+        const skyY = 1;
+        for (let x = 2; x <= 14; x++) {
+            this.tiles[skyY][x].type = 'elevated';
+            // elevated は walkable = false のまま（飛行ユニットのみ通行可能）
+        }
+
+        // 下部にも空中ルート
+        const lowSkyY = this.rows - 2;
+        for (let x = 2; x <= 14; x++) {
+            this.tiles[lowSkyY][x].type = 'elevated';
+        }
+
+        // 迷路エリアにも配置可能なemptyマスを追加（トラップ配置用）
+        for (let y = 2; y < this.rows - 2; y++) {
+            for (let x = 1; x < this.cols - 1; x++) {
+                const tile = this.tiles[y][x];
+                // path、spawn、core、elevated、pit以外をemptyに設定し移動可能にする
+                if (tile.type !== 'path' && tile.type !== 'spawn' && tile.type !== 'core' &&
+                    tile.type !== 'elevated' && tile.type !== 'pit') {
+                    tile.type = 'empty';
+                    tile.walkable = true; // emptyマスを移動可能に
+                }
+            }
         }
     }
 
     setupZigzagPath() {
-        // 2マス幅のジグザグ道
+        // ジグザグ迷路 - 空中ルートと落とし穴を戦略的に配置
         this.pathTiles = [];
-        let x = 0, y = 3;
+        let x = 0, y = 5;
 
         // スポーン地点（2マス幅）
         this.tiles[y][x].type = 'spawn';
@@ -148,8 +216,8 @@ class Grid {
             // 3マスごとに上下に移動
             if (x % 3 === 0 && x < this.cols - 1) {
                 const oldY = y;
-                if (y <= 3) {
-                    y = Math.min(y + 3, this.rows - 4);
+                if (y <= 5) {
+                    y = Math.min(y + 3, this.rows - 3);
                 } else {
                     y = Math.max(y - 3, 3);
                 }
@@ -163,6 +231,19 @@ class Grid {
                     this.pathTiles.push({ x, y: ty });
                     this.pathTiles.push({ x: x + 1, y: ty });
                 }
+
+                // 落とし穴をルート脇に配置
+                if (oldY < y) {
+                    // 下へ移動する場合、右側に落とし穴
+                    if (x + 2 < this.cols) {
+                        this.tiles[y][x + 2].type = 'pit';
+                    }
+                } else {
+                    // 上へ移動する場合、左側に落とし穴
+                    if (x - 1 >= 0) {
+                        this.tiles[y][x - 1].type = 'pit';
+                    }
+                }
             }
         }
 
@@ -170,15 +251,31 @@ class Grid {
         this.tiles[y][this.cols - 1].type = 'core';
         this.tiles[y + 1][this.cols - 1].type = 'core';
 
-        // 高台と溝を追加
-        this.tiles[1][5].type = 'elevated';
-        this.tiles[1][11].type = 'elevated';
-        this.tiles[this.rows - 2][5].type = 'pit';
-        this.tiles[this.rows - 2][11].type = 'pit';
+        // 紫マス（elevated） - 空戦ルート
+        // 上部を一直線に
+        for (let px = 3; px < this.cols - 2; px++) {
+            this.tiles[1][px].type = 'elevated';
+        }
+        // 下部も一直線に
+        for (let px = 3; px < this.cols - 2; px++) {
+            this.tiles[this.rows - 2][px].type = 'elevated';
+        }
+
+        // emptyマスを移動可能に
+        for (let py = 2; py < this.rows - 2; py++) {
+            for (let px = 1; px < this.cols - 1; px++) {
+                const tile = this.tiles[py][px];
+                if (tile.type !== 'path' && tile.type !== 'spawn' && tile.type !== 'core' &&
+                    tile.type !== 'elevated' && tile.type !== 'pit') {
+                    tile.type = 'empty';
+                    tile.walkable = true;
+                }
+            }
+        }
     }
 
     setupSplitPath() {
-        // 2マス幅の分岐するパス
+        // 上下分岐ルート - 落とし穴と空中ルートを効果的に配置
         this.pathTiles = [];
         const startY = Math.floor(this.rows / 2);
 
@@ -195,6 +292,10 @@ class Grid {
             this.pathTiles.push({ x, y: startY });
             this.pathTiles.push({ x, y: startY + 1 });
         }
+
+        // 分岐点前に落とし穴
+        this.tiles[startY - 1][4].type = 'pit';
+        this.tiles[startY + 2][4].type = 'pit';
 
         // 上下に分岐
         const upperY = startY - 2;
@@ -222,6 +323,9 @@ class Grid {
             this.pathTiles.push({ x, y: upperY + 1 });
         }
 
+        // 上ルート脇に落とし穴
+        this.tiles[upperY - 1][8].type = 'pit';
+
         // 下ルート（2マス幅）
         for (let x = 7; x <= 10; x++) {
             this.tiles[lowerY][x].type = 'path';
@@ -229,6 +333,9 @@ class Grid {
             this.pathTiles.push({ x, y: lowerY });
             this.pathTiles.push({ x, y: lowerY - 1 });
         }
+
+        // 下ルート脇に落とし穴
+        this.tiles[lowerY + 1][8].type = 'pit';
 
         // 合流点（x=11-12）から上ルートの接続
         for (let ty = upperY; ty <= startY + 1; ty++) {
@@ -250,24 +357,42 @@ class Grid {
             this.pathTiles.push({ x, y: startY + 1 });
         }
 
+        // 合流後にも落とし穴
+        this.tiles[startY + 2][14].type = 'pit';
+
         // コア（2マス幅）
         this.tiles[startY][this.cols - 1].type = 'core';
         this.tiles[startY + 1][this.cols - 1].type = 'core';
 
-        // 高台
-        if (upperY - 2 >= 0) {
-            this.tiles[upperY - 2][8].type = 'elevated';
+        // 紫マス（elevated） - 空戦ルート: 分岐路を避けて移動できる迂回路
+        // 上部ルート
+        for (let x = 2; x <= 14; x++) {
+            this.tiles[0][x].type = 'elevated';
         }
-        this.tiles[startY - 1][2].type = 'elevated';
+        // 下部ルート
+        for (let x = 2; x <= 14; x++) {
+            this.tiles[this.rows - 1][x].type = 'elevated';
+        }
+        // 中央の分岐を避けるショートカット
+        for (let x = 7; x <= 10; x++) {
+            this.tiles[startY][x].type = 'elevated';
+        }
 
-        // 溝
-        if (lowerY + 2 < this.rows) {
-            this.tiles[lowerY + 2][8].type = 'pit';
+        // emptyマスを移動可能に
+        for (let py = 1; py < this.rows - 1; py++) {
+            for (let px = 1; px < this.cols - 1; px++) {
+                const tile = this.tiles[py][px];
+                if (tile.type !== 'path' && tile.type !== 'spawn' && tile.type !== 'core' &&
+                    tile.type !== 'elevated' && tile.type !== 'pit') {
+                    tile.type = 'empty';
+                    tile.walkable = true;
+                }
+            }
         }
     }
 
     setupMazePath() {
-        // 2マス幅の迷路風のパス
+        // 複雑な迷路パス - 落とし穴と空中ルートを含む
         this.pathTiles = [];
         const path = [
             { x: 0, y: 6 }, // スポーン
@@ -299,18 +424,41 @@ class Grid {
             this.pathTiles.push({ x, y: y + 1 });
         }
 
-        // 高台(迷路の角に配置)
-        this.tiles[1][3].type = 'elevated';
-        this.tiles[1][9].type = 'elevated';
-        this.tiles[1][12].type = 'elevated';
+        // 迷路の曲がり角に落とし穴を配置
+        this.tiles[2][3].type = 'pit';  // 最初の曲がり角
+        this.tiles[6][7].type = 'pit';  // 中央エリア
+        this.tiles[10][9].type = 'pit'; // 最後の曲がり角手前
+        this.tiles[12][5].type = 'pit'; // ゴール手前
 
-        // 溝
-        this.tiles[this.rows - 2][3].type = 'pit';
-        this.tiles[this.rows - 2][9].type = 'pit';
+        // 紫マス（elevated） - 空戦ルート: 迷路を無視した直線ルート
+        // 上部を一直線に
+        for (let x = 2; x <= 14; x++) {
+            this.tiles[1][x].type = 'elevated';
+        }
+        // 迷路の中央を横断する空中ルート
+        for (let x = 4; x <= 11; x++) {
+            this.tiles[6][x].type = 'elevated';
+        }
+        // 下部を一直線に
+        for (let x = 2; x <= 14; x++) {
+            this.tiles[this.rows - 2][x].type = 'elevated';
+        }
+
+        // emptyマスを移動可能に
+        for (let py = 2; py < this.rows - 2; py++) {
+            for (let px = 1; px < this.cols - 1; px++) {
+                const tile = this.tiles[py][px];
+                if (tile.type !== 'path' && tile.type !== 'spawn' && tile.type !== 'core' &&
+                    tile.type !== 'elevated' && tile.type !== 'pit') {
+                    tile.type = 'empty';
+                    tile.walkable = true;
+                }
+            }
+        }
     }
 
     setupDualSpawnPath() {
-        // 2つのスポーン地点から出発し、1つのコアに向かうパス
+        // 2つのスポーン地点から出発 - 空中ルートと落とし穴を配置
         this.pathTiles = [];
         this.spawnPoints = []; // 複数スポーン地点を保存
 
@@ -337,6 +485,14 @@ class Grid {
             this.tiles[lowerSpawnY][x].type = 'path';
         }
 
+        // 上ルート脇に落とし穴
+        this.tiles[upperSpawnY - 1][4].type = 'pit';
+        this.tiles[upperSpawnY + 1][6].type = 'pit';
+
+        // 下ルート脇に落とし穴
+        this.tiles[lowerSpawnY - 1][6].type = 'pit';
+        this.tiles[lowerSpawnY + 1][4].type = 'pit';
+
         // 合流点から上ルートへの接続
         for (let y = upperSpawnY; y <= coreY; y++) {
             this.tiles[y][mergeX].type = 'path';
@@ -347,10 +503,17 @@ class Grid {
             this.tiles[y][mergeX].type = 'path';
         }
 
+        // 合流点に落とし穴
+        this.tiles[coreY - 1][mergeX - 1].type = 'pit';
+        this.tiles[coreY + 1][mergeX + 1].type = 'pit';
+
         // 合流後の直線
         for (let x = mergeX + 1; x < this.cols; x++) {
             this.tiles[coreY][x].type = 'path';
         }
+
+        // ゴール手前の落とし穴
+        this.tiles[coreY + 1][this.cols - 3].type = 'pit';
 
         // コア
         this.tiles[coreY][this.cols - 1].type = 'core';
@@ -367,19 +530,35 @@ class Grid {
             this.pathTiles.push({ x: x, y: coreY });
         }
 
-        // 高台と溝を配置
-        if (upperSpawnY - 1 >= 0) {
-            this.tiles[upperSpawnY - 1][5].type = 'elevated';
-            this.tiles[upperSpawnY - 1][10].type = 'elevated';
+        // 紫マス（elevated） - 空戦ルート: 両ルートの上空を通過
+        // 上ルートの上空
+        for (let x = 2; x <= mergeX + 2; x++) {
+            this.tiles[1][x].type = 'elevated';
         }
-        if (lowerSpawnY + 1 < this.rows) {
-            this.tiles[lowerSpawnY + 1][5].type = 'pit';
-            this.tiles[lowerSpawnY + 1][10].type = 'pit';
+        // 下ルートの下空
+        for (let x = 2; x <= mergeX + 2; x++) {
+            this.tiles[this.rows - 2][x].type = 'elevated';
+        }
+        // 合流後の空中ショートカット
+        for (let x = mergeX; x <= this.cols - 2; x++) {
+            this.tiles[coreY - 2][x].type = 'elevated';
+        }
+
+        // emptyマスを移動可能に
+        for (let py = 2; py < this.rows - 2; py++) {
+            for (let px = 1; px < this.cols - 1; px++) {
+                const tile = this.tiles[py][px];
+                if (tile.type !== 'path' && tile.type !== 'spawn' && tile.type !== 'core' &&
+                    tile.type !== 'elevated' && tile.type !== 'pit') {
+                    tile.type = 'empty';
+                    tile.walkable = true;
+                }
+            }
         }
     }
 
     setupTripleSpawnPath() {
-        // 3つのスポーン地点から出発し、1つのコアに向かうパス
+        // 3つのスポーン地点から出発 - 空中ルートと落とし穴を配置
         this.pathTiles = [];
         this.spawnPoints = []; // 複数スポーン地点を保存
 
@@ -414,15 +593,31 @@ class Grid {
             this.tiles[botSpawnY][x].type = 'path';
         }
 
+        // 各ルートに落とし穴を配置
+        this.tiles[topSpawnY - 1][3].type = 'pit';
+        this.tiles[topSpawnY + 1][5].type = 'pit';
+        this.tiles[midSpawnY - 1][4].type = 'pit';
+        this.tiles[midSpawnY + 1][6].type = 'pit';
+        this.tiles[botSpawnY - 1][5].type = 'pit';
+        this.tiles[botSpawnY + 1][3].type = 'pit';
+
         // 合流点への接続
         for (let y = topSpawnY; y <= botSpawnY; y++) {
             this.tiles[y][mergeX].type = 'path';
         }
 
+        // 合流点周辺に落とし穴
+        this.tiles[topSpawnY][mergeX - 1].type = 'pit';
+        this.tiles[botSpawnY][mergeX + 1].type = 'pit';
+
         // 合流後の直線
         for (let x = mergeX + 1; x < this.cols; x++) {
             this.tiles[coreY][x].type = 'path';
         }
+
+        // ゴール手前の落とし穴
+        this.tiles[coreY - 1][this.cols - 4].type = 'pit';
+        this.tiles[coreY + 1][this.cols - 2].type = 'pit';
 
         // コア
         this.tiles[coreY][this.cols - 1].type = 'core';
@@ -438,11 +633,32 @@ class Grid {
             this.pathTiles.push({ x: x, y: coreY });
         }
 
-        // 高台と溝を配置
-        this.tiles[topSpawnY - 1][7].type = 'elevated';
-        this.tiles[topSpawnY - 1][12].type = 'elevated';
-        this.tiles[botSpawnY + 1][7].type = 'pit';
-        this.tiles[botSpawnY + 1][12].type = 'pit';
+        // 紫マス（elevated） - 空戦ルート: 3つのルートを避ける迂回路
+        // 最上部を一直線に
+        for (let x = 2; x <= this.cols - 2; x++) {
+            this.tiles[0][x].type = 'elevated';
+        }
+        // 最下部を一直線に
+        for (let x = 2; x <= this.cols - 2; x++) {
+            this.tiles[this.rows - 1][x].type = 'elevated';
+        }
+        // 合流点上空のショートカット
+        for (let x = mergeX - 1; x <= this.cols - 2; x++) {
+            this.tiles[coreY - 1][x].type = 'elevated';
+            this.tiles[coreY + 1][x].type = 'elevated';
+        }
+
+        // emptyマスを移動可能に
+        for (let py = 1; py < this.rows - 1; py++) {
+            for (let px = 1; px < this.cols - 1; px++) {
+                const tile = this.tiles[py][px];
+                if (tile.type !== 'path' && tile.type !== 'spawn' && tile.type !== 'core' &&
+                    tile.type !== 'elevated' && tile.type !== 'pit') {
+                    tile.type = 'empty';
+                    tile.walkable = true;
+                }
+            }
+        }
     }
 
     getTile(x, y) {
