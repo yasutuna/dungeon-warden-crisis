@@ -176,6 +176,10 @@ class Trap {
                 this.applyFireEffect(target, effect);
                 break;
 
+            case 'wildfire':
+                this.applyWildfireEffect(target, effect, game);
+                break;
+
             case 'ice':
                 this.applyIceEffect(target, effect);
                 break;
@@ -315,6 +319,20 @@ class Trap {
             );
             target.statusEffects.addEffect(burnEffect);
         }
+    }
+
+    applyWildfireEffect(target, effect, game) {
+        const tileSize = game?.grid?.tileSize || GRID_CONSTANTS.TILE_SIZE || 40;
+        const wildfireEffect = new StatusEffect('wildfire', effect.duration, {
+            damagePerTile: effect.damagePerTile || 10,
+            neighborBonus: effect.neighborBonus || 0.1,
+            spreadChance: effect.spreadChance || 0.1,
+            extinguishChance: effect.extinguishChance || 0.05,
+            spreadRadius: effect.spreadRadius || effect.aoeRadius || 2,
+            neighborRadius: effect.neighborRadius || 2,
+            tileSize
+        });
+        target.statusEffects.addEffect(wildfireEffect);
     }
 
     applyIceEffect(target, effect) {

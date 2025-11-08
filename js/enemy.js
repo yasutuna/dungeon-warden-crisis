@@ -521,7 +521,7 @@ class Enemy {
         }
 
         // 状態異常更新
-        this.statusEffects.update(deltaTime);
+        this.statusEffects.update(deltaTime, game);
 
         this.updateBehaviorState(deltaTime, game);
 
@@ -562,6 +562,26 @@ class Enemy {
         if (this.pathIndex >= this.path.length) {
             this.reachedCore = true;
             return;
+        }
+
+        // 近くの罠を探す（攻撃可能な罠のみ）
+        const nearbyTrap = this.findNearbyTrap(game);
+        if (nearbyTrap) {
+            const trapPos = game.grid.gridToWorld(nearbyTrap.gridX, nearbyTrap.gridY);
+            const dist = distance(this.x, this.y, trapPos.x, trapPos.y);
+            const attackRange = this.data.attack
+                ? this.data.attack.range * game.grid.tileSize
+                : game.grid.tileSize * 0.8;
+
+            if (dist <= attackRange) {
+                this.clearStepTarget();
+                this.combatTrap(nearbyTrap, deltaTime, game);
+                return;
+            } else {
+                this.clearStepTarget();
+                this.moveTowardsTrap(nearbyTrap, deltaTime, game);
+                return;
+            }
         }
 
         // �߂��̃����X�^�[��T��
@@ -914,6 +934,92 @@ class Enemy {
         return taunterMonster || closestMonster;
     }
 
+    findNearbyTrap(game) {
+        // 攻撃データがない場合は罠を探さない
+        if (!this.data.attack) return null;
+
+        // targets配列に"trap"が含まれていない場合は罠を探さない
+        if (!this.data.attack.targets || !this.data.attack.targets.includes("trap")) {
+            return null;
+        }
+
+        // 罠攻撃の制限：canDestroyAllTrapsがtrueの場合はすべての罠、それ以外は破壊可能な罠のみ
+        const canDestroyAllTraps = this.data.attack.canDestroyAllTraps || false;
+
+        const detectionRange = this.data.attack.range * game.grid.tileSize * 1.5;
+        let closestTrap = null;
+        let closestDist = Infinity;
+
+        for (const trap of game.traps) {
+            if (trap.destroyed) continue;
+
+            // 罠の破壊可能性をチェック
+            if (!canDestroyAllTraps && !(trap.data && trap.data.destructible)) {
+                continue;
+            }
+
+            const trapPos = game.grid.gridToWorld(trap.gridX, trap.gridY);
+            const dist = distance(this.x, this.y, trapPos.x, trapPos.y);
+
+            if (dist <= detectionRange && dist < closestDist) {
+                closestTrap = trap;
+                closestDist = dist;
+            }
+        }
+
+        return closestTrap;
+    }
+
+    moveTowardsTrap(trap, deltaTime, game) {
+        const trapPos = game.grid.gridToWorld(trap.gridX, trap.gridY);
+        const dx = trapPos.x - this.x;
+        const dy = trapPos.y - this.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist > 1) {
+            const moveAmount = this.moveSpeed * game.grid.tileSize * deltaTime;
+            const newX = this.x + (dx / dist) * moveAmount;
+            const newY = this.y + (dy / dist) * moveAmount;
+
+            if (!this.wouldCollideWithEnemy(newX, newY, game)) {
+                this.x = newX;
+                this.y = newY;
+                this.updateGridPosition(game);
+            }
+        }
+    }
+
+    combatTrap(trap, deltaTime, game) {
+        if (!this.data.attack) return;
+
+        if (this.attackCooldown > 0) {
+            this.attackCooldown -= deltaTime;
+            return;
+        }
+
+        this.isAttackAnimating = true;
+        this.attackAnimationTimer = 0.3;
+        this.attackTarget = trap;
+
+        let damage = this.data.attack.damage;
+
+        // バーサーカースキル（低HP時のダメージボーナス）
+        const berserker = this.skillMap.get('enemy_berserker');
+        if (berserker && this.hp / this.maxHp <= berserker.effect.hp_threshold) {
+            damage = Math.floor(damage * (1 + berserker.effect.damage_bonus));
+        }
+
+        const trapPos = game.grid.gridToWorld(trap.gridX, trap.gridY);
+        trap.takeDamage(damage);
+
+        // ダメージエフェクト
+        if (game.effectPool) {
+            game.effectPool.createDamageText(trapPos.x, trapPos.y, damage, false);
+        }
+
+        this.attackCooldown = this.data.attack.interval;
+    }
+
     moveTowardsMonster(monster, deltaTime, game) {
         // モンスターに向かって移動
         const dx = monster.x - this.x;
@@ -1186,7 +1292,16 @@ class Enemy {
         }
 
         // 近くの罠またはモンスターを攻撃
-        const targets = [...game.traps, ...game.monsters];
+        // targets配列をチェックして、罠を攻撃対象に含むか確認
+        const canTargetTraps = this.data.attack.targets && this.data.attack.targets.includes("trap");
+
+        // 罠攻撃の制限：canDestroyAllTrapsがtrueの場合はすべての罠、それ以外は破壊可能な罠のみ
+        const canDestroyAllTraps = this.data.attack.canDestroyAllTraps || false;
+        const attackableTraps = canTargetTraps ? game.traps.filter(trap => {
+            if (trap.destroyed) return false;
+            return canDestroyAllTraps || (trap.data && trap.data.destructible);
+        }) : [];
+        const targets = [...attackableTraps, ...game.monsters];
         let closestTarget = null;
         let closestDist = Infinity;
         const attackRange = this.data.attack.range * game.grid.tileSize;
@@ -1247,7 +1362,16 @@ class Enemy {
             return false;
         }
 
-        const targets = [...game.traps, ...game.monsters];
+        // targets配列をチェックして、罠を攻撃対象に含むか確認
+        const canTargetTraps = this.data.attack.targets && this.data.attack.targets.includes("trap");
+
+        // 罠攻撃の制限：canDestroyAllTrapsがtrueの場合はすべての罠、それ以外は破壊可能な罠のみ
+        const canDestroyAllTraps = this.data.attack.canDestroyAllTraps || false;
+        const attackableTraps = canTargetTraps ? game.traps.filter(trap => {
+            if (trap.destroyed) return false;
+            return canDestroyAllTraps || (trap.data && trap.data.destructible);
+        }) : [];
+        const targets = [...attackableTraps, ...game.monsters];
         this.isAttackAnimating = true;
         this.attackAnimationTimer = 0.5;
         this.attackTarget = plan.primaryTarget;
@@ -1293,7 +1417,16 @@ class Enemy {
             return null;
         }
 
-        const targets = [...game.traps, ...game.monsters];
+        // targets配列をチェックして、罠を攻撃対象に含むか確認
+        const canTargetTraps = this.data.attack.targets && this.data.attack.targets.includes("trap");
+
+        // 罠攻撃の制限：canDestroyAllTrapsがtrueの場合はすべての罠、それ以外は破壊可能な罠のみ
+        const canDestroyAllTraps = this.data.attack.canDestroyAllTraps || false;
+        const attackableTraps = canTargetTraps ? game.traps.filter(trap => {
+            if (trap.destroyed) return false;
+            return canDestroyAllTraps || (trap.data && trap.data.destructible);
+        }) : [];
+        const targets = [...attackableTraps, ...game.monsters];
         let bestPlan = null;
         let maxHitCount = 0;
         const attackRange = this.data.attack.range * game.grid.tileSize;
@@ -1657,33 +1790,14 @@ class Enemy {
     takeDamage(amount, type = 'physical', source = null) {
         if (amount <= 0) return 0;
 
+        // amountはCombatSystemで既に計算済みのダメージ
+        // ここでは回避、バリア、ダメージ反射、実HPの処理のみ行う
         let finalDamage = amount;
 
         // 回避スキル
         if (this.evasionChance > 0 && Math.random() < this.evasionChance) {
             // 回避成功
             return 0;
-        }
-
-        // 耐性の適用
-        if (this.resist && this.resist[type]) {
-            finalDamage *= (1 - this.resist[type]);
-        }
-
-        // 地上罠無効（飛行）
-        if (this.flying && this.resist && this.resist.ground_trap && type === 'trap') {
-            finalDamage *= (1 - this.resist.ground_trap);
-        }
-
-        // 凍結中は砕き効果
-        if (this.vulnerableToShatter && this.statusEffects.hasEffect('freeze')) {
-            finalDamage *= Enemy.SHATTER_MULTIPLIER;
-            this.vulnerableToShatter = false;
-        }
-
-        // 火炎脆弱性
-        if (type === 'fire' && this.fireVulnerability > 1.0) {
-            finalDamage *= this.fireVulnerability;
         }
 
         // バリアで吸収

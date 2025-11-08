@@ -729,5 +729,34 @@ const ENEMY_DATA = {
             rewardMultiplier: 1.3
         },
         description: "空戦ユニット・遠隔攻撃・地上罠無効"
+    },
+    saboteur: {
+        id: "saboteur",
+        name: "破壊工作員",
+        hp: 160,
+        maxHp: 160,
+        speed: 1.2,
+        baseSpeed: 1.2,
+        abilities: ["trap_destroyer"],
+        attack: {
+            type: "melee",
+            damage: 12,
+            range: 1.5,
+            interval: 1.2,
+            targets: ["trap", "monster"],
+            canDestroyAllTraps: true // すべての罠を破壊可能
+        },
+        resist: {
+            knockback: 0.5
+        },
+        soulReward: 15,
+        manaReward: 3,
+        aiType: "aggressive",
+        levelScaling: {
+            hpMultiplier: 1.15,
+            damageMultiplier: 1.13,
+            rewardMultiplier: 1.3
+        },
+        description: "罠破壊専門・全種類の罠を攻撃可能"
     }
 };

@@ -90,7 +90,8 @@ function drawStatusIcon(ctx, x, y, size, type) {
         stun: '⚡',
         oiled: '💧',
         shield: '🛡️',
-        confused: '😵'
+        confused: '😵',
+        wildfire: '♨️'
     };
 
     const icon = icons[type] || '?';

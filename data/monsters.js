@@ -64,7 +64,7 @@ const MONSTER_DATA = {
             }
         },
         unlocked: true,
-        description: "接触で鈍足、HP半分で分裂"
+        description: "ダメージを受けると30%の確率で分裂し、生成される個体は元のレベルの半分になる"
     },
     goblin_engineer: {
         id: "goblin_engineer",
@@ -125,7 +125,8 @@ const MONSTER_DATA = {
             effect: {
                 type: "stun",
                 duration: 0.7,
-                damage: 20
+                damage: 20,
+                range: 3.5
             }
         },
         unlocked: false,
@@ -260,7 +261,7 @@ const MONSTER_DATA = {
             effect: {
                 type: "instant_damage",
                 damage: 100,
-                range: 1
+                range: 2.5
             }
         },
         unlocked: false,
@@ -294,7 +295,7 @@ const MONSTER_DATA = {
                 type: "multi_shot",
                 count: 3,
                 damage: 12,
-                range: 6
+                range: 6.5
             }
         },
         unlocked: false,
@@ -362,7 +363,7 @@ const MONSTER_DATA = {
                 type: "aoe_freeze",
                 damage: 30,
                 duration: 2,
-                range: 3
+                range: 3.2
             }
         },
         unlocked: false,
@@ -397,7 +398,7 @@ const MONSTER_DATA = {
             effect: {
                 type: "cone_attack",
                 damage: 25,
-                range: 2
+                range: 2.8
             }
         },
         unlocked: false,
@@ -434,7 +435,7 @@ const MONSTER_DATA = {
             effect: {
                 type: "aoe_stun",
                 duration: 1.5,
-                range: 2.5
+                range: 2.8
             }
         },
         unlocked: false,
@@ -539,7 +540,7 @@ const MONSTER_DATA = {
             effect: {
                 type: "instant_damage",
                 damage: 30,
-                range: 1
+                range: 2.6
             }
         },
         unlocked: false,
@@ -573,7 +574,7 @@ const MONSTER_DATA = {
             effect: {
                 type: "aoe_damage",
                 damage: 40,
-                range: 2
+                range: 3.2
             }
         },
         unlocked: false,

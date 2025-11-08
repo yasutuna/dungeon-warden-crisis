@@ -18,6 +18,16 @@ class CombatSystem {
             finalDamage *= (1 - defender.resist[damageType]);
         }
 
+        // 飛行ユニットの地上罠耐性
+        if (defender && defender.flying && defender.resist && defender.resist.ground_trap && damageType === 'trap') {
+            finalDamage *= (1 - defender.resist.ground_trap);
+        }
+
+        // 火炎脆弱性（fireVulnerability > 1.0の場合）
+        if (damageType === 'fire' && defender && defender.fireVulnerability && defender.fireVulnerability > 1.0) {
+            finalDamage *= defender.fireVulnerability;
+        }
+
         // 状態異常による修正
         if (defender && defender.statusEffects) {
             // 油濡れ + 火炎
@@ -26,8 +36,11 @@ class CombatSystem {
             }
 
             // 凍結中の砕き効果
-            if (defender.vulnerableToShatter) {
-                finalDamage *= 1.3;
+            if (defender.vulnerableToShatter && defender.statusEffects.hasEffect('freeze')) {
+                const shatterMultiplier = COMBAT_CONSTANTS.SHATTER_MULTIPLIER || 1.3;
+                finalDamage *= shatterMultiplier;
+                // 砕き効果は一度だけ適用（フラグをリセット）
+                defender.vulnerableToShatter = false;
             }
         }
 

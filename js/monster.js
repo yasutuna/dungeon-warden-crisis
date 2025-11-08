@@ -1,3 +1,16 @@
+const OFFENSIVE_ACTIVE_SKILL_TYPES = new Set([
+    'instant_damage',
+    'multi_shot',
+    'aoe_freeze',
+    'cone_attack',
+    'aoe_stun',
+    'aoe_damage',
+    'stun',
+    'debuff_enemies'
+]);
+const GROUND_TRAVERSABLE_TILES = new Set(['path', 'spawn', 'core']);
+const FLYING_TRAVERSABLE_TILES = new Set(['elevated', 'path', 'spawn', 'core']);
+
 // モンスタークラス
 class Monster {
     constructor(data, x, y, level = 1) {
@@ -33,6 +46,15 @@ class Monster {
         this.activeCooldown = 0;
         this.target = null;
         this.statusEffects = new StatusEffectManager(this);
+        this.skillRangeTiles = this.data.active && this.data.active.effect
+            ? (this.data.active.effect.range || 0)
+            : 0;
+        this.demonLordBuff = null;
+        this.deathProcessed = false;
+        this.shouldSplit = false;
+        this.shouldShowReviveEffect = false;
+        this.barrier = 0;
+        this.fireVulnerability = 1.0;
 
         // 攻撃アニメーション用
         this.attackAnimationTimer = 0;
@@ -225,7 +247,7 @@ class Monster {
         }
 
         // 状態異常更新
-        this.statusEffects.update(deltaTime);
+        this.statusEffects.update(deltaTime, game);
 
         // スタン中は何もしない
         if (this.stunned) {
@@ -533,7 +555,8 @@ class Monster {
         const targetMonsterData = MONSTER_DATA[targetMonsterId];
 
         // スライムと同じレベルで新しいユニットを生成
-        const newLevel = slime.level;
+        const levelSource = this.id === 'demon_lord' ? this.level : slime.level;
+        const newLevel = Math.max(1, levelSource);
         const newMonster = new Monster(targetMonsterData, slime.gridX, slime.gridY, newLevel);
 
         // スライムの習得スキルを継承
@@ -642,8 +665,13 @@ class Monster {
     }
 
     moveTowards(targetX, targetY, deltaTime, game) {
-        // 移動速度が0の場合は移動しない（魔王など）
+        // �ړ����x��0�̏ꍇ�͈ړ����Ȃ��i�����Ȃǁj
         if (this.moveSpeed <= 0) {
+            return;
+        }
+
+        // �h���b�O������Ԃ͌����ړ����Ȃ�
+        if (game.isDragging && game.draggedMonster === this) {
             return;
         }
 
@@ -654,36 +682,86 @@ class Monster {
         if (dist > 1) {
             const moveAmount = this.moveSpeed * game.grid.tileSize * deltaTime * GAME_CONSTANTS.MONSTER_MOVE_SPEED_MULTIPLIER;
 
-            // 目標位置を計算
-            const newX = this.x + (dx / dist) * moveAmount;
-            const newY = this.y + (dy / dist) * moveAmount;
+            // �ڕW�ʒu���v�Z
+            let newX = this.x + (dx / dist) * moveAmount;
+            let newY = this.y + (dy / dist) * moveAmount;
+            let candidateGrid = game.grid.worldToGrid(newX, newY);
+            let candidateTile = game.grid.getTile(candidateGrid.x, candidateGrid.y);
+            const allowedTiles = this.flying ? FLYING_TRAVERSABLE_TILES : GROUND_TRAVERSABLE_TILES;
 
-            // 他のモンスターとの衝突チェック
-            const collisionRadius = game.grid.tileSize * 0.4; // モンスター同士の最小距離
-            let canMove = true;
+            // ���̃����X�^�[�Ƃ̏Փ˃�F�b�N
+            const collisionRadius = game.grid.tileSize * 0.4; // �����X�^�[���m�̍ŏ�����
+            let canMove = !!candidateTile && allowedTiles.has(candidateTile.type);
 
-            for (const otherMonster of game.monsters) {
-                if (otherMonster === this || otherMonster.dead) continue;
+            if (canMove) {
+                for (const otherMonster of game.monsters) {
+                    if (otherMonster === this || otherMonster.dead) continue;
 
-                const otherDx = newX - otherMonster.x;
-                const otherDy = newY - otherMonster.y;
-                const otherDist = Math.sqrt(otherDx * otherDx + otherDy * otherDy);
+                    const otherDx = newX - otherMonster.x;
+                    const otherDy = newY - otherMonster.y;
+                    const otherDist = Math.sqrt(otherDx * otherDx + otherDy * otherDy);
 
-                // 他のモンスターに近すぎる場合は移動を制限
-                if (otherDist < collisionRadius) {
-                    canMove = false;
-                    break;
+                    // ���̃����X�^�[�ɋ߂�����ꍇ�͈ړ��𐧌�
+                    if (otherDist < collisionRadius) {
+                        canMove = false;
+                        break;
+                    }
                 }
             }
 
-            // 衝突しない場合のみ移動
+            // ゴブリン工兵の場合、壁やユニットにぶつかったら別方向を試す
+            if (!canMove && this.id === 'goblin_engineer') {
+                const alternativeDirections = this.getAlternativeDirections(dx, dy, moveAmount);
+                for (const altDir of alternativeDirections) {
+                    const altX = this.x + altDir.dx;
+                    const altY = this.y + altDir.dy;
+                    const altGrid = game.grid.worldToGrid(altX, altY);
+                    const altTile = game.grid.getTile(altGrid.x, altGrid.y);
+
+                    let altCanMove = !!altTile && allowedTiles.has(altTile.type);
+
+                    if (altCanMove) {
+                        // 他のモンスターとの衝突チェック
+                        let hasCollision = false;
+                        for (const otherMonster of game.monsters) {
+                            if (otherMonster === this || otherMonster.dead) continue;
+
+                            const otherDx = altX - otherMonster.x;
+                            const otherDy = altY - otherMonster.y;
+                            const otherDist = Math.sqrt(otherDx * otherDx + otherDy * otherDy);
+
+                            if (otherDist < collisionRadius) {
+                                hasCollision = true;
+                                break;
+                            }
+                        }
+
+                        if (!hasCollision) {
+                            // この方向に移動可能
+                            canMove = true;
+                            newX = altX;
+                            newY = altY;
+                            candidateGrid = altGrid;
+                            candidateTile = altTile;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // �Փ˂��Ȃ��ꍇ�݈̂ړ�
             if (canMove) {
                 this.x = newX;
                 this.y = newY;
 
-                // グリッド位置を更新
+                // �O���b�h�ʒu���X�V
                 const gridPos = game.grid.worldToGrid(this.x, this.y);
                 if (gridPos.x !== this.gridX || gridPos.y !== this.gridY) {
+                    // �h���b�O�����Ă���ꍇ�͌����ړ��ɖ߂�
+                    if (game.isDragging && game.draggedMonster === this) {
+                        return;
+                    }
+
                     const oldTile = game.grid.getTile(this.gridX, this.gridY);
                     if (oldTile && oldTile.monster === this) {
                         oldTile.monster = null;
@@ -694,12 +772,12 @@ class Monster {
 
                     const newTile = game.grid.getTile(this.gridX, this.gridY);
 
-                    // 落とし穴チェック: 空戦ユニット以外が落とし穴に入ったら即死
+                    // ���Ƃ�����F�b�N: ��탆�j�b�g�ȊO�����Ƃ����ɓ������瑦��
                     if (newTile && newTile.type === 'pit' && !this.flying) {
                         this.hp = 0;
                         this.dead = true;
                         game.ui.showMessage(`${this.name}が落とし穴に落ちて即死しました！`, 'warning');
-                        // タイルに登録せずに終了
+                        // �^�C���ɓo�^�����ɏI��
                         return;
                     }
 
@@ -711,215 +789,179 @@ class Monster {
         }
     }
 
-    performAttack(target, game) {
-        // 攻撃アニメーション開始
-        this.isAttackAnimating = true;
-        this.attackAnimationTimer = 0.2; // 0.2秒間アニメーション
+    getAlternativeDirections(dx, dy, moveAmount) {
+        // 元の方向を正規化
+        const mainAngle = Math.atan2(dy, dx);
 
-        let damage = this.attack.damage;
-        let isCritical = false;
+        // 試す代替方向（元の方向から45度、90度、135度、180度ずつずらす）
+        const angleOffsets = [
+            Math.PI / 4,      // 45度右
+            -Math.PI / 4,     // 45度左
+            Math.PI / 2,      // 90度右
+            -Math.PI / 2,     // 90度左
+            3 * Math.PI / 4,  // 135度右
+            -3 * Math.PI / 4, // 135度左
+            Math.PI           // 180度（反対方向）
+        ];
 
-        // ダメージボーナススキルの適用
-        const powerAttack = this.skillMap.get('power_attack');
-        if (powerAttack) {
-            damage *= (1 + powerAttack.effect.value);
+        const alternatives = [];
+
+        for (const offset of angleOffsets) {
+            const newAngle = mainAngle + offset;
+            const newDx = Math.cos(newAngle) * moveAmount;
+            const newDy = Math.sin(newAngle) * moveAmount;
+            alternatives.push({ dx: newDx, dy: newDy });
         }
 
-        // ベテランスキルのボーナス
-        const veteran = this.skillMap.get('veteran');
-        if (veteran && this.killCount >= veteran.effect.kills_required) {
-            damage *= (1 + veteran.effect.bonus);
+        return alternatives;
+    }
+
+    takeDamage(amount, type = 'physical', source = null) {
+        if (this.dead || amount <= 0) {
+            return 0;
         }
 
-        // 背水の陣スキル
-        const lastStand = this.skillMap.get('last_stand');
-        if (lastStand && this.hp / this.maxHp <= lastStand.effect.threshold) {
-            damage *= (1 + lastStand.effect.bonus);
-        }
+        // amountはCombatSystemで既に計算済みのダメージ
+        // ここでは耐性計算をせず、バリアと実HPの処理のみ行う
+        let finalDamage = amount;
 
-        // クリティカル判定
-        const critSkill = this.skillMap.get('critical_strike');
-        if (critSkill && Math.random() < critSkill.effect.value) {
-            damage *= critSkill.effect.multiplier;
-            isCritical = true;
-        }
+        // シールド処理前にスライム分裂判定を行う（攻撃を受けた時点で判定）
+        // レベル2以上のスライムのみ分裂可能
+        if (this.id === 'slime' && this.level >= 2 && finalDamage > 0) {
+            const chance = SLIME_CONSTANTS.SPLIT_CHANCE ?? 0.3;
+            const projectedHpWithoutBarrier = this.hp - finalDamage;
+            const hpAfterBarrier = this.barrier > 0
+                ? this.hp - Math.max(0, finalDamage - this.barrier)
+                : projectedHpWithoutBarrier;
 
-        // 処刑スキル（低HP敵へのボーナス）
-        const execute = this.skillMap.get('execute');
-        if (execute && target.hp / target.maxHp <= execute.effect.threshold) {
-            damage *= (1 + execute.effect.bonus);
-        }
+            console.log(`【スライム分裂判定】 Lv.${this.level} HP: ${this.hp}/${this.maxHp}, 実HP: ${hpAfterBarrier}, 想定HP: ${projectedHpWithoutBarrier}, 確率: ${chance}, バリア: ${this.barrier}`);
 
-        // 最終ダメージを整数に
-        damage = Math.floor(damage);
-
-        // 攻撃エフェクト
-        if (this.attack.effect === 'slow') {
-            const slowEffect = new StatusEffect('slow', 2, { amount: 0.25 });
-            target.statusEffects.addEffect(slowEffect);
-        }
-
-        // 敵が死ぬ前のHPを記録
-        const wasAlive = !target.dead;
-        const oldHp = target.hp;
-
-        // ダメージ適用
-        target.takeDamage(damage, this.attack.type);
-
-        // ダメージ表示
-        game.effectPool.createDamageText(target.x, target.y, damage, isCritical);
-
-        // 吸血スキル
-        const lifeSteal = this.skillMap.get('life_steal');
-        if (lifeSteal) {
-            const healAmount = Math.floor(damage * lifeSteal.effect.value);
-            this.hp = Math.min(this.hp + healAmount, this.maxHp);
-        }
-
-        // 魔王の吸血パッシブ
-        if (this.id === 'demon_lord' && this.data.passive && this.data.passive.lifeStealRate) {
-            const healAmount = Math.floor(damage * this.data.passive.lifeStealRate);
-            const oldHp = this.hp;
-            this.hp = Math.min(this.hp + healAmount, this.maxHp);
-            const actualHeal = this.hp - oldHp;
-
-            if (actualHeal > 0) {
-                // 回復エフェクト（将来的に追加可能）
+            if (this.hp > 0 && hpAfterBarrier > 0 && Math.random() < chance) {
+                this.shouldSplit = true;
+                console.log('【スライム分裂判定】 分裂フラグ設定！');
             }
         }
 
-        // 連鎖攻撃スキル
-        const chainAttack = this.skillMap.get('chain_attack');
-        if (chainAttack) {
-            this.applyChainAttack(target, damage, chainAttack.effect, game);
+        // バリア処理
+        if (this.barrier && this.barrier > 0) {
+            if (this.barrier >= finalDamage) {
+                this.barrier -= finalDamage;
+                return 0;
+            } else {
+                finalDamage -= this.barrier;
+                this.barrier = 0;
+            }
         }
 
-        // 敵を倒した場合、経験値を獲得
-        if (wasAlive && target.dead) {
-            this.onEnemyKilled(target, game);
+        this.hp -= finalDamage;
+
+        if (this.hp <= 0) {
+            if (!this.tryAutoRevive()) {
+                this.hp = 0;
+                this.dead = true;
+                this.shouldSplit = false;
+            }
         }
+
+        return finalDamage;
     }
 
-    applyChainAttack(originalTarget, baseDamage, effect, game) {
-        const chainRange = effect.range * game.grid.tileSize;
-        const chainDamage = Math.floor(baseDamage * effect.damage);
+    tryAutoRevive() {
+        const passive = this.data.passive;
+        if (!passive || !passive.reviveChance) {
+            return false;
+        }
 
-        // 元のターゲット以外の近くの敵を探す
-        for (const enemy of game.enemies) {
-            if (enemy === originalTarget || enemy.dead) continue;
+        const baseChance = passive.reviveChance || 0;
+        const perLevel = passive.reviveChancePerLevel || 0;
+        const maxChance = passive.maxReviveChance || baseChance;
+        const chance = Math.min(maxChance, baseChance + (this.level - 1) * perLevel);
 
-            const dist = distance(originalTarget.x, originalTarget.y, enemy.x, enemy.y);
-            if (dist <= chainRange) {
-                // 連鎖ダメージ適用
-                enemy.takeDamage(chainDamage, this.attack.type);
-                game.effectPool.createDamageText(enemy.x, enemy.y, chainDamage, false);
+        if (Math.random() < chance) {
+            const hpRatio = passive.reviveHpRatio || 0.5;
+            this.hp = Math.max(1, Math.floor(this.maxHp * hpRatio));
+            this.dead = false;
+            this.shouldShowReviveEffect = true;
+            this.deathProcessed = false;
+            this.shouldSplit = false;
+            return true;
+        }
 
-                // 連鎖は1体のみ
+        return false;
+    }
+
+    performAttack(target, game) {
+        if (!this.attack || !target || target.dead) {
+            return;
+        }
+
+        this.isAttackAnimating = true;
+        this.attackAnimationTimer = Math.max(0.15, Math.min(0.35, (this.attack.interval || 1) * 0.2));
+        this.attackTarget = target;
+
+        let damage = this.attack.damage || 0;
+
+        const lastStand = this.skillMap.get('last_stand');
+        if (lastStand && this.maxHp > 0) {
+            const threshold = lastStand.effect.threshold || 0.5;
+            const bonus = lastStand.effect.bonus ?? lastStand.effect.damage_bonus ?? 0.3;
+            if ((this.hp / this.maxHp) <= threshold) {
+                damage = Math.floor(damage * (1 + bonus));
+            }
+        }
+
+        const veteran = this.skillMap.get('veteran');
+        if (veteran && this.killCount >= (veteran.effect.kills_required || 0)) {
+            damage = Math.floor(damage * (1 + (veteran.effect.bonus || 0)));
+        }
+
+        const damageType = this.attack.type === 'magic' ? 'magic' : 'physical';
+        const wasDead = target.dead;
+
+        let actualDamage = 0;
+        const combatSystem = game ? game.combatSystem : null;
+        if (combatSystem) {
+            actualDamage = combatSystem.applyDamage(target, damage, damageType, this);
+        } else if (typeof target.takeDamage === 'function') {
+            actualDamage = target.takeDamage(damage, damageType, this);
+        } else {
+            target.hp -= damage;
+            actualDamage = damage;
+        }
+
+        if (this.lifeStealRate > 0 && actualDamage > 0) {
+            const healAmount = Math.floor(actualDamage * this.lifeStealRate);
+            if (healAmount > 0) {
+                this.hp = Math.min(this.hp + healAmount, this.maxHp);
+            }
+        }
+
+        if (!wasDead && target.dead) {
+            this.killCount++;
+        }
+
+        this.applyOnHitEffect(target);
+    }
+
+    applyOnHitEffect(target) {
+        if (!this.attack || !this.attack.effect) return;
+        if (!target || !target.statusEffects) return;
+
+        switch (this.attack.effect) {
+            case 'slow': {
+                const duration = 1.5;
+                const amount = STATUS_EFFECT_CONSTANTS.SLOW_DEFAULT_AMOUNT || 0.4;
+                target.statusEffects.addEffect(new StatusEffect('slow', duration, { amount }));
                 break;
             }
-        }
-    }
-
-    onEnemyKilled(enemy, game) {
-        // 撃破数カウント
-        this.killCount++;
-
-        // 経験値獲得（敵のレベルとソウル報酬に基づく）
-        let expGained = Math.floor(enemy.soulReward * 10 + enemy.level * 20);
-
-        // 狩人スキルの経験値ボーナス
-        const hunter = this.skillMap.get('hunter');
-        if (hunter) {
-            expGained = Math.floor(expGained * (1 + hunter.effect.exp_bonus));
-        }
-
-        const oldLevel = this.level;
-        const oldSkillCount = this.learnedSkills.length;
-        this.gainExp(expGained);
-
-        // レベルアップした場合
-        if (this.level > oldLevel) {
-            game.ui.showMessage(`${this.name}がLv.${this.level}にレベルアップ！`, 'success');
-            game.ui.addLog(`${this.name}がLv.${this.level}にレベルアップしました！`, 'success');
-
-            // スキル習得通知
-            if (this.learnedSkills.length > oldSkillCount) {
-                const newSkill = this.learnedSkills[this.learnedSkills.length - 1];
-                game.ui.showMessage(`${this.name}が「${newSkill.name}」を習得！`, 'info');
-                game.ui.addLog(`${this.name}がスキル「${newSkill.name}」を習得しました！`, 'info');
+            case 'freeze': {
+                const duration = 0.8;
+                target.statusEffects.addEffect(new StatusEffect('freeze', duration, {}));
+                target.vulnerableToShatter = true;
+                break;
             }
-        }
-
-        // ゾンビの敵ユニット継承能力
-        if (this.id === 'zombie' && this.data.passive && this.data.passive.zombifyChance) {
-            const baseChance = this.data.passive.zombifyChance || 0.1;
-            const chancePerLevel = this.data.passive.zombifyChancePerLevel || 0.01;
-            const maxChance = this.data.passive.maxZombifyChance || 0.5;
-
-            // レベルに応じたゾンビ化確率を計算
-            const zombifyChance = Math.min(
-                baseChance + (this.level - 1) * chancePerLevel,
-                maxChance
-            );
-
-            if (Math.random() < zombifyChance) {
-                this.createZombieFromEnemy(enemy, game);
-            }
-        }
-
-        // 地獄の猟犬の敵撃破時HP回復
-        if (this.id === 'demon_hound' && this.data.passive && this.data.passive.killHealPercent) {
-            const healAmount = Math.floor(this.maxHp * this.data.passive.killHealPercent);
-            const oldHp = this.hp;
-            this.hp = Math.min(this.hp + healAmount, this.maxHp);
-            const actualHeal = this.hp - oldHp;
-
-            if (actualHeal > 0) {
-                game.ui.showMessage(`${this.name}が${actualHeal}HP回復！`, 'success');
-            }
-        }
-
-        // 他の全モンスターに10%の経験値を配分
-        game.distributeExpToAllMonsters(enemy, this);
-    }
-
-    /**
-     * 敵ユニットからゾンビを生成（レベルとスキルを継承）
-     */
-    createZombieFromEnemy(enemy, game) {
-        const zombieData = MONSTER_DATA['zombie'];
-        if (!zombieData) return;
-
-        // 敵のグリッド位置に新しいゾンビを生成
-        const newZombie = new Monster(zombieData, enemy.gridX, enemy.gridY, enemy.level);
-
-        // 敵のスキルを継承（敵用スキルを持っている場合）
-        if (enemy.learnedSkills && enemy.learnedSkills.length > 0) {
-            for (const skill of enemy.learnedSkills) {
-                // スキルを継承（重複チェック）
-                if (!newZombie.skillMap.has(skill.id)) {
-                    newZombie.learnedSkills.push(skill);
-                    newZombie.skillMap.set(skill.id, skill);
-                    newZombie.applySkillEffect(skill);
-                }
-            }
-        }
-
-        // 位置を継承
-        newZombie.x = enemy.x;
-        newZombie.y = enemy.y;
-
-        // グリッドに配置を試みる
-        const tile = game.grid.getTile(enemy.gridX, enemy.gridY);
-        if (tile && !tile.monster) {
-            tile.monster = newZombie;
-            game.monsters.push(newZombie);
-            game.quadtreeDirty = true;
-
-            const skillInfo = enemy.learnedSkills && enemy.learnedSkills.length > 0
-                ? `(${enemy.learnedSkills.map(s => s.name).join(', ')}継承)`
-                : '';
-            game.ui.showMessage(`${this.name}が${enemy.name}をゾンビ化！Lv.${enemy.level} ${skillInfo}`, 'success');
+            default:
+                break;
         }
     }
 
@@ -957,7 +999,7 @@ class Monster {
                 const maxTargets = active.effect.maxTargets || 2;
                 const healAmount = active.effect.healAmount || 50;
 
-                // 回復が必要な味方を探す
+                // 回復が必要な味方を探索
                 const injuredAllies = game.monsters.filter(monster => {
                     if (monster.dead || monster === this) return false;
                     if (monster.hp >= monster.maxHp) return false;
@@ -981,7 +1023,7 @@ class Monster {
 
                     if (actualHeal > 0) {
                         healedCount++;
-                        // 回復エフェクト（将来的に追加）
+                        // 回復エフェクト（必要なら追加）
                     }
                 }
 
@@ -991,54 +1033,6 @@ class Monster {
                     game.ui.showMessage(`${this.name}が味方を回復しました`, 'success');
                 }
             }
-        }
-    }
-
-    takeDamage(amount, type) {
-        let finalDamage = amount;
-
-        // バリアがあれば先に消費
-        if (this.barrier && this.barrier > 0) {
-            if (this.barrier >= finalDamage) {
-                this.barrier -= finalDamage;
-                return;
-            } else {
-                finalDamage -= this.barrier;
-                this.barrier = 0;
-            }
-        }
-
-        this.hp -= finalDamage;
-
-        if (this.hp <= 0) {
-            this.hp = 0;
-            this.dead = true;
-
-            // スケルトン兵の自動蘇生判定
-            if (this.id === 'skeleton_guard' && this.data.passive) {
-                const baseReviveChance = this.data.passive.reviveChance || 0.5;
-                const reviveChancePerLevel = this.data.passive.reviveChancePerLevel || 0.01;
-                const maxReviveChance = this.data.passive.maxReviveChance || 0.8;
-
-                // レベルに応じた蘇生確率を計算
-                const reviveChance = Math.min(
-                    baseReviveChance + (this.level - 1) * reviveChancePerLevel,
-                    maxReviveChance
-                );
-
-                if (Math.random() < reviveChance) {
-                    // 蘇生成功
-                    this.hp = Math.floor(this.maxHp * 0.5); // 最大HPの50%で復活
-                    this.dead = false;
-                    this.shouldShowReviveEffect = true; // 蘇生エフェクトフラグ
-                }
-            }
-        }
-
-        // スライムの分裂判定：攻撃を受ける度に30%の確率で分裂
-        if (this.id === 'slime' && this.hp > 0 && Math.random() < 0.3) {
-            // 分裂フラグを設定（ゲームマネージャーで処理）
-            this.shouldSplit = true;
         }
     }
 
@@ -1130,6 +1124,9 @@ class Monster {
 
         ctx.restore();
 
+        // アクティブスキル範囲表示
+        this.drawSkillRangeIndicator(ctx, game);
+
         // 攻撃範囲表示（攻撃中に強調表示）
         if (this.state === 'attacking' && this.isAttackAnimating) {
             ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
@@ -1148,6 +1145,71 @@ class Monster {
                 ctx.stroke();
             }
         }
+    }
+
+    drawSkillRangeIndicator(ctx, game) {
+        if (!this.shouldShowSkillRangeIndicator()) {
+            return;
+        }
+
+        const radius = this.getActiveSkillRangePixels(game);
+        if (radius <= 0) return;
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(66, 153, 225, 0.45)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    shouldShowSkillRangeIndicator() {
+        if (!this.data.active || this.skillRangeTiles <= 0) return false;
+        if (this.activeCooldown > 0) return false;
+        const effectType = this.data.active.effect?.type;
+        return effectType ? OFFENSIVE_ACTIVE_SKILL_TYPES.has(effectType) : false;
+    }
+
+    getActiveSkillRangePixels(game) {
+        return (this.skillRangeTiles || 0) * game.grid.tileSize;
+    }
+
+    applyDemonLordAuraBonus(bonus) {
+        if (!bonus) return;
+        this.removeDemonLordAuraBonus();
+
+        const applied = { attack: 0, maxHp: 0 };
+        if (bonus.attack) {
+            this.attack.damage += bonus.attack;
+            applied.attack = bonus.attack;
+        }
+
+        if (bonus.maxHp) {
+            this.maxHp += bonus.maxHp;
+            this.hp = Math.min(this.hp + bonus.maxHp, this.maxHp);
+            applied.maxHp = bonus.maxHp;
+        }
+
+        if (applied.attack || applied.maxHp) {
+            this.demonLordBuff = applied;
+        }
+    }
+
+    removeDemonLordAuraBonus() {
+        if (!this.demonLordBuff) return;
+
+        if (this.demonLordBuff.attack) {
+            this.attack.damage = Math.max(1, this.attack.damage - this.demonLordBuff.attack);
+        }
+
+        if (this.demonLordBuff.maxHp) {
+            this.maxHp = Math.max(1, this.maxHp - this.demonLordBuff.maxHp);
+            this.hp = Math.min(this.hp, this.maxHp);
+        }
+
+        this.demonLordBuff = null;
     }
 
     getMonsterColor() {

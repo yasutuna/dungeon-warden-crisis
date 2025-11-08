@@ -573,6 +573,9 @@ class Game {
 
         monster.hp = monster.maxHp;
         monster.dead = false;
+        monster.deathProcessed = false;
+        monster.shouldSplit = false;
+        monster.shouldShowReviveEffect = false;
         this.soul -= monster.data.reviveCost;
         this.ui.showMessage(`${monster.name}を蘇生しました`, 'success');
     }
@@ -646,10 +649,11 @@ class Game {
         for (const monster of this.monsters) {
             monster.update(dt, this.enemies, this);
 
-            // スライム分裂処理（攻撃を受けた際に20%の確率で分裂）
+            // スライム分裂処理（攻撃を受けた際にSLIME_CONSTANTS.SPLIT_CHANCEで分裂判定）
             if (monster.id === 'slime' && monster.shouldSplit && !monster.dead) {
+                console.log('[ゲーム] スライム分裂処理開始');
                 this.handleSlimeSplit(monster);
-                monster.shouldSplit = false; // フラグをリセット
+                monster.shouldSplit = false; // 処理後にフラグをリセット（次の攻撃で再度判定可能）
             }
 
             // スケルトン兵の蘇生エフェクト表示
@@ -664,6 +668,8 @@ class Game {
                 monster.shouldShowReviveEffect = false;
             }
         }
+        this.cleanupDeadMonsters();
+        this.applyDemonLordAuraBonuses();
 
         // 敵の更新
         for (const enemy of this.enemies) {
@@ -981,42 +987,154 @@ class Game {
 
     /**
      * スライム分裂処理
-     * 攻撃を受けた際に50%の確率で、半分のレベルのスライムを1体生成
+     * ダメージを受けた時にSLIME_CONSTANTS.SPLIT_CHANCEで現在レベルのスライムを再生成
      */
     handleSlimeSplit(originalSlime) {
         const slimeData = MONSTER_DATA['slime'];
 
-        // 分裂後のレベルは元のレベルの半分（最低1）
+        // 新しいレベルは元のレベルの半分（最低1）
         const newLevel = Math.max(1, Math.floor(originalSlime.level / 2));
 
-        // 近くの空きタイルを探す
-        const offsets = [
-            {dx: 1, dy: 0}, {dx: -1, dy: 0}, {dx: 0, dy: 1}, {dx: 0, dy: -1},
-            {dx: 1, dy: 1}, {dx: -1, dy: -1}, {dx: 1, dy: -1}, {dx: -1, dy: 1}
-        ];
+        // マップ全体から最寄りの配置可能マスを探索（BFSで広範囲探索）
+        const spawnTile = this.findNearestMonsterPlacement(originalSlime.gridX, originalSlime.gridY, false);
+        if (!spawnTile) {
+            // マップ全体に配置可能なマスが1つもない場合（極めて稀）
+            console.warn('Slime split failed: no available placement tile in entire map.');
+            return;
+        }
 
-        for (const offset of offsets) {
-            const newX = originalSlime.gridX + offset.dx;
-            const newY = originalSlime.gridY + offset.dy;
+        // 新しいレベルで新規スライムを生成
+        const newSlime = new Monster(slimeData, spawnTile.x, spawnTile.y, newLevel);
 
-            if (this.grid.canPlaceMonster(newX, newY, false)) {
-                // 半分のレベルで新しいスライムを生成
-                const newSlime = new Monster(slimeData, newX, newY, newLevel);
-
-                if (this.grid.placeMonster(newX, newY, newSlime)) {
-                    this.monsters.push(newSlime);
-                    this.quadtreeDirty = true;
-                    this.ui.showMessage(`スライム Lv.${newLevel}が分裂しました！`, 'info');
-                    this.ui.addLog(`スライム Lv.${newLevel}が分裂して新しいスライムが誕生しました！`, 'info');
-                    break;
-                }
-            }
+        if (this.grid.placeMonster(spawnTile.x, spawnTile.y, newSlime)) {
+            this.monsters.push(newSlime);
+            this.quadtreeDirty = true;
+            this.ui.showMessage(`スライム Lv.${newLevel}が分裂しました！`, 'info');
+            this.ui.addLog(`スライム Lv.${newLevel}が分裂し新たなスライムが誕生しました！`, 'info');
         }
     }
 
     /**
-     * 指定位置にいるモンスターを取得
+     * 指定位置から最寄りの配置可能マスを探索
      */
+    findNearestMonsterPlacement(startX, startY, flying = false) {
+        const directions = [
+            { dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
+            { dx: 1, dy: 1 }, { dx: -1, dy: -1 }, { dx: 1, dy: -1 }, { dx: -1, dy: 1 }
+        ];
+        const visited = new Set([`${startX},${startY}`]);
+        const queue = [{ x: startX, y: startY }];
+        let index = 0;
+
+        while (index < queue.length) {
+            const current = queue[index++];
+
+            if ((current.x !== startX || current.y !== startY) &&
+                this.grid.canPlaceMonster(current.x, current.y, flying)) {
+                return current;
+            }
+
+            for (const dir of directions) {
+                const nx = current.x + dir.dx;
+                const ny = current.y + dir.dy;
+
+                if (nx < 0 || nx >= this.grid.cols || ny < 0 || ny >= this.grid.rows) {
+                    continue;
+                }
+
+                const key = `${nx},${ny}`;
+                if (!visited.has(key)) {
+                    visited.add(key);
+                    queue.push({ x: nx, y: ny });
+                }
+            }
+        }
+
+        return null;
+    }
+    cleanupDeadMonsters() {
+        for (const monster of this.monsters) {
+            if (monster.dead && !monster.deathProcessed) {
+                this.handleFriendlyDeath(monster);
+            }
+        }
+    }
+
+    handleFriendlyDeath(monster) {
+        monster.deathProcessed = true;
+
+        const tile = this.grid.getTile(monster.gridX, monster.gridY);
+        if (tile && tile.monster === monster) {
+            tile.monster = null;
+        }
+
+        const bonusExp = Math.floor(monster.exp * 0.1);
+        if (bonusExp <= 0) {
+            return;
+        }
+
+        this.distributeDeathExperience(monster, bonusExp);
+    }
+
+    distributeDeathExperience(fallenMonster, bonusExp) {
+        const livingMonsters = this.monsters.filter(m => !m.dead && m !== fallenMonster);
+        this.distributeEvenly(bonusExp, livingMonsters, (ally, share) => {
+            if (share > 0) {
+                ally.gainExp(share);
+            }
+        });
+
+        const activeTraps = this.traps.filter(trap => !trap.destroyed);
+        this.distributeEvenly(bonusExp, activeTraps, (trap, share) => {
+            if (share > 0) {
+                trap.gainExp(share);
+            }
+        });
+    }
+
+    distributeEvenly(amount, recipients, applyFn) {
+        if (amount <= 0 || recipients.length === 0) return;
+        let remaining = amount;
+        let remainingRecipients = recipients.length;
+
+        for (const target of recipients) {
+            if (remaining <= 0) break;
+            let share = Math.floor(remaining / remainingRecipients);
+            if (share <= 0) {
+                share = 1;
+            }
+            share = Math.min(share, remaining);
+            applyFn(target, share);
+            remaining -= share;
+            remainingRecipients--;
+        }
+    }
+
+    applyDemonLordAuraBonuses() {
+        for (const monster of this.monsters) {
+            if (typeof monster.removeDemonLordAuraBonus === 'function') {
+                monster.removeDemonLordAuraBonus();
+            }
+        }
+
+        const demonLord = this.monsters.find(m => !m.dead && m.id === 'demon_lord');
+        if (!demonLord) {
+            return;
+        }
+
+        const bonus = {
+            attack: Math.max(1, Math.floor(demonLord.attack.damage * 0.1)),
+            maxHp: Math.max(1, Math.floor(demonLord.maxHp * 0.1))
+        };
+
+        for (const monster of this.monsters) {
+            if (monster === demonLord || monster.dead) continue;
+            if (typeof monster.applyDemonLordAuraBonus === 'function') {
+                monster.applyDemonLordAuraBonus(bonus);
+            }
+        }
+    }
+
     getMonsterAtPosition(x, y) {
         const hoverRadius = this.grid.tileSize * 0.6;
         for (const monster of this.monsters) {

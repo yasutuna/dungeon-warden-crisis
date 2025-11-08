@@ -40,6 +40,7 @@ const TRAP_DATA = {
             pierce: 0
         },
         targeting: "frontmost",
+        destructible: true, // 遠距離ダメージ罠 - 敵が破壊可能
         synergyTags: ["physical", "projectile"],
         unlocked: true,
         description: "最前列の敵を攻撃",
@@ -67,12 +68,15 @@ const TRAP_DATA = {
             debuff: "oiled",
             duration: 3,
             aoeRadius: 1.5,
-            slow: 0.5 // 移動速度50%減少
+            slow: 0.5
         },
         targeting: "area",
         synergyTags: ["fire_synergy", "slow"],
         unlocked: true,
-        description: "油濡れ状態を付与(火炎+50%)+移動速度50%減少"
+        description: "油濡れ状態を付与し火炎ダメージ+50%、移動速度50%減少",
+        evolution: {
+            fire_vent: "wildfire_trap"
+        }
     },
 
     fire_vent: {
@@ -96,7 +100,36 @@ const TRAP_DATA = {
         targeting: "area",
         synergyTags: ["fire", "fire_synergy"],
         unlocked: false,
-        description: "範囲火炎ダメージ、油濡れで倍化"
+        description: "範囲火炎ダメージ。油濡れ状態の敵に追加ボーナス",
+        evolution: {
+            oil_pot: "wildfire_trap"
+        }
+    },
+
+    wildfire_trap: {
+        id: "wildfire_trap",
+        name: "延焼罠",
+        cost: 180,
+        repairCost: 60,
+        hp: 110,
+        maxHp: 110,
+        cooldownSec: 7,
+        range: 1.5,
+        effect: {
+            type: "wildfire",
+            duration: 6,
+            damagePerTile: 10,
+            neighborBonus: 0.1,
+            spreadChance: 0.1,
+            extinguishChance: 0.05,
+            spreadRadius: 2,
+            neighborRadius: 2
+        },
+        targeting: "area",
+        synergyTags: ["fire", "oil", "status"],
+        unlocked: false,
+        description: "油壺と火炎孔の融合。延焼を付与し毎秒伝播判定を行う",
+        evolved: true
     },
 
     ice_floor: {
@@ -596,6 +629,7 @@ const TRAP_DATA = {
             pierce: 1
         },
         targeting: "nearest",
+        destructible: true, // 遠距離ダメージ罠 - 敵が破壊可能
         synergyTags: ["physical", "rapid"],
         unlocked: false,
         description: "高速連射で最も近い敵を攻撃"
@@ -682,6 +716,7 @@ const TRAP_DATA = {
             pierce: 1
         },
         targeting: "frontmost",
+        destructible: true, // 遠距離ダメージ罠 - 敵が破壊可能
         synergyTags: ["physical", "projectile"],
         unlocked: false,
         description: "矢壁の上位互換。高速連射+貫通",
@@ -709,6 +744,7 @@ const TRAP_DATA = {
             }
         },
         targeting: "frontmost",
+        destructible: true, // 遠距離ダメージ罠 - 敵が破壊可能
         synergyTags: ["physical", "fire", "projectile"],
         unlocked: false,
         description: "矢+炎。物理ダメージ+燃焼DOT",
@@ -733,6 +769,7 @@ const TRAP_DATA = {
             slowDuration: 2
         },
         targeting: "frontmost",
+        destructible: true, // 遠距離ダメージ罠 - 敵が破壊可能
         synergyTags: ["physical", "ice", "projectile"],
         unlocked: false,
         description: "矢+氷。物理ダメージ+鈍足",
@@ -761,6 +798,7 @@ const TRAP_DATA = {
             healingReduction: 0.3
         },
         targeting: "frontmost",
+        destructible: true, // 遠距離ダメージ罠 - 敵が破壊可能
         synergyTags: ["physical", "poison", "projectile"],
         unlocked: false,
         description: "矢+毒。物理ダメージ+毒DOT+回復阻害",
@@ -785,6 +823,7 @@ const TRAP_DATA = {
             chainDamageReduction: 0.5
         },
         targeting: "frontmost",
+        destructible: true, // 遠距離ダメージ罠 - 敵が破壊可能
         synergyTags: ["physical", "lightning", "projectile"],
         unlocked: false,
         description: "矢+雷。物理ダメージ+2体に連鎖",
@@ -813,6 +852,7 @@ const TRAP_DATA = {
             damageAmplify: 0.1
         },
         targeting: "frontmost",
+        destructible: true, // 遠距離ダメージ罠 - 敵が破壊可能
         synergyTags: ["physical", "curse", "projectile"],
         unlocked: false,
         description: "矢+呪い。物理ダメージ+呪いDOT+被ダメ増加",

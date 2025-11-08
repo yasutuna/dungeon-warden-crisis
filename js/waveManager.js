@@ -40,8 +40,11 @@ class WaveManager {
         const existingTraps = [...this.game.traps];
         const existingMonsters = [...this.game.monsters];
 
-        // グリッドを再生成
-        this.game.grid = new Grid(16, 12, 50);
+        // グリッドを再生成（初期グリッドと同じスケールを使用）
+        const cols = (typeof GRID_CONSTANTS !== 'undefined' && GRID_CONSTANTS.COLS) || this.game.grid?.cols || 16;
+        const rows = (typeof GRID_CONSTANTS !== 'undefined' && GRID_CONSTANTS.ROWS) || this.game.grid?.rows || 12;
+        const tileSize = (typeof GRID_CONSTANTS !== 'undefined' && GRID_CONSTANTS.TILE_SIZE) || this.game.grid?.tileSize || 50;
+        this.game.grid = new Grid(cols, rows, tileSize);
         this.game.grid.setupDefaultPath(this.currentWave);
 
         // 経路探索を更新
