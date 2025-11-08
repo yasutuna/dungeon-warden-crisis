@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dungeon Warden - タワーディフェンス</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <div id="header" role="banner">
+            <div class="header-section" role="region" aria-label="Wave情報">
+                <div class="resource">
+                    <span class="resource-label">Wave:</span>
+                    <span id="wave-display" aria-live="polite">1/15</span>
+                </div>
+                <div class="resource">
+                    <span class="resource-label">コアHP:</span>
+                    <span id="core-hp" aria-live="assertive">100</span>
+                </div>
+                <div class="resource score-display">
+                    <span class="resource-label">スコア:</span>
+                    <span id="score-display" aria-live="polite">0</span>
+                </div>
+            </div>
+            <div class="header-section" role="region" aria-label="リソース情報">
+                <div class="resource">
+                    <span class="resource-label">ソウル:</span>
+                    <span id="soul-display" aria-live="polite">300</span>
+                </div>
+                <div class="resource">
+                    <span class="resource-label">マナ:</span>
+                    <span id="mana-display" aria-live="polite">100/200</span>
+                </div>
+                <div class="resource">
+                    <span class="resource-label">素材:</span>
+                    <span id="material-display" aria-live="polite">0</span>
+                </div>
+            </div>
+            <div class="header-section">
+                <button id="start-wave-btn" class="action-btn" aria-label="Wave開始ボタン">🌊 Wave開始</button>
+                <button id="auto-wave-btn" class="action-btn" aria-label="Wave自動進行ボタン">🔄 自動: OFF</button>
+                <button id="speed-btn" class="action-btn" aria-label="ゲーム速度変更ボタン">⚡ ×1</button>
+                <button id="pause-btn" class="action-btn" aria-label="一時停止ボタン">⏸️ 一時停止</button>
+                <button id="monster-status-btn" class="action-btn" aria-label="モンスター情報ボタン">📊 モンスター情報</button>
+                <button id="log-btn" class="action-btn" aria-label="ログ表示ボタン">📜 ログ</button>
+                <button id="help-btn" class="action-btn help-btn" aria-label="ヘルプボタン">❓ ヘルプ</button>
+            </div>
+        </div>
+
+        <div id="main-content">
+            <div id="left-panel" class="panel" role="region" aria-label="罠選択パネル">
+                <h3>⚔️ 罠</h3>
+                <div id="trap-palette" class="palette" role="list" aria-label="利用可能な罠">
+                    <!-- 罠ボタンがここに追加される -->
+                </div>
+            </div>
+
+            <canvas id="game-canvas" width="800" height="600" role="img" aria-label="ゲームフィールド"></canvas>
+
+            <div id="right-panel" class="panel" role="region" aria-label="モンスター選択パネル">
+                <h3>👹 モンスター</h3>
+                <div id="monster-palette" class="palette" role="list" aria-label="利用可能なモンスター">
+                    <!-- モンスターボタンがここに追加される -->
+                </div>
+            </div>
+        </div>
+
+        <div id="bottom-panel" class="panel" role="region" aria-label="選択情報パネル">
+            <div id="selection-info" aria-live="polite">
+                <p>オブジェクトを選択してください</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- モンスターステータスパネル -->
+    <div id="monster-status-panel" class="overlay-panel" style="display: none;">
+        <div class="overlay-content">
+            <div class="overlay-header">
+                <h2>📊 モンスター情報</h2>
+                <button id="close-monster-status" class="close-btn" aria-label="閉じる">✕</button>
+            </div>
+            <div id="monster-status-list" class="status-list">
+                <!-- モンスター情報がここに表示される -->
+            </div>
+        </div>
+    </div>
+
+    <!-- ログパネル -->
+    <div id="log-panel" class="overlay-panel" style="display: none;">
+        <div class="overlay-content">
+            <div class="overlay-header">
+                <h2>📜 戦闘ログ</h2>
+                <button id="close-log" class="close-btn" aria-label="閉じる">✕</button>
+            </div>
+            <div id="log-list" class="log-list">
+                <!-- ログがここに表示される -->
+            </div>
+        </div>
+    </div>
+
+    <script src="data/traps.js"></script>
+    <script src="data/monsters.js"></script>
+    <script src="data/enemies.js"></script>
+    <script src="data/waves.js"></script>
+    <script src="js/constants.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/quadtree.js"></script>
+    <script src="js/objectPool.js"></script>
+    <script src="js/priorityQueue.js"></script>
+    <script src="js/grid.js"></script>
+    <script src="js/pathfinding.js"></script>
+    <script src="js/statusEffects.js"></script>
+    <script src="js/trap.js"></script>
+    <script src="js/monster.js"></script>
+    <script src="js/enemy.js"></script>
+    <script src="js/combat.js"></script>
+    <script src="js/waveManager.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/game.js"></script>
+</body>
+</html>

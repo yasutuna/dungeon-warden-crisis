@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(start index.html)",
+      "Bash(test:*)",
+      "Bash(python -m http.server:*)",
+      "Bash(echo:*)",
+      "Bash(test_grid.js)",
+      "Bash(dir:*)",
+      "Bash(explorer .)",
+      "Bash(node:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
