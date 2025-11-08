@@ -1041,15 +1041,15 @@ class Game {
         const tile = this.grid.getTile(gx, gy);
         if (!tile) return false;
 
-        // 飛行ユニットの場合
+        // 空戦ユニットの場合
         if (monster.flying) {
-            // elevated、path、spawn、coreに移動可能（empty、pitは不可）
+            // elevated、path、spawn、coreに移動可能（pitとemptyは不可）
             if (tile.type !== 'elevated' && tile.type !== 'path' &&
                 tile.type !== 'spawn' && tile.type !== 'core') {
                 return false;
             }
         } else {
-            // 地上ユニットの場合: path、spawn、coreにのみ移動可能
+            // 地上ユニットの場合: path、spawn、coreにのみ移動可能（elevated、pit、emptyは不可）
             if (tile.type !== 'path' && tile.type !== 'spawn' && tile.type !== 'core') {
                 return false;
             }

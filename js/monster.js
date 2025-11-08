@@ -693,6 +693,16 @@ class Monster {
                     this.gridY = gridPos.y;
 
                     const newTile = game.grid.getTile(this.gridX, this.gridY);
+
+                    // 落とし穴チェック: 空戦ユニット以外が落とし穴に入ったら即死
+                    if (newTile && newTile.type === 'pit' && !this.flying) {
+                        this.hp = 0;
+                        this.dead = true;
+                        game.ui.showMessage(`${this.name}が落とし穴に落ちて即死しました！`, 'warning');
+                        // タイルに登録せずに終了
+                        return;
+                    }
+
                     if (newTile && !newTile.monster) {
                         newTile.monster = this;
                     }
@@ -1146,7 +1156,9 @@ class Monster {
             slime: '#48bb78',
             goblin_engineer: '#ed8936',
             gargoyle: '#805ad5',
-            wisp: '#4299e1'
+            wisp: '#4299e1',
+            harpy: '#ff69b4',
+            sky_knight: '#4682b4'
         };
         return colors[this.id] || '#718096';
     }
@@ -1167,7 +1179,9 @@ class Monster {
             demon_hound: '🐺',
             golem: '🗿',
             vampire: '🦇',
-            demon_lord: '👑' // 魔王は王冠で特別感を出す
+            demon_lord: '👑', // 魔王は王冠で特別感を出す
+            harpy: '🦜',
+            sky_knight: '⚔️'
         };
         return icons[this.id] || '👹';
     }

@@ -510,5 +510,73 @@ const MONSTER_DATA = {
         unique: true, // 1体しか出現できない
         initialPlacement: "core", // C地点（コア）に初期配置
         description: "スライムを他のユニットに変換できる特殊ユニット、攻撃で回復、1体のみ召喚可能、移動不可"
+    },
+    harpy: {
+        id: "harpy",
+        name: "ハーピー",
+        role: "aerial_scout",
+        summonCost: 100,
+        upkeep: 6,
+        reviveCost: 50,
+        hp: 140,
+        maxHp: 140,
+        attack: {
+            type: "ranged",
+            damage: 12,
+            range: 5,
+            interval: 1.1
+        },
+        moveSpeed: 1.4,
+        flying: true,
+        passive: {
+            name: "風の翼",
+            effect: "空戦マスを移動可能、落とし穴の影響を受けない"
+        },
+        active: {
+            name: "急降下攻撃",
+            manaCost: 30,
+            cooldown: 12,
+            effect: {
+                type: "instant_damage",
+                damage: 30,
+                range: 1
+            }
+        },
+        unlocked: false,
+        description: "空戦ユニット、遠隔攻撃、高速移動"
+    },
+    sky_knight: {
+        id: "sky_knight",
+        name: "天空騎士",
+        role: "aerial_tank",
+        summonCost: 140,
+        upkeep: 8,
+        reviveCost: 70,
+        hp: 220,
+        maxHp: 220,
+        attack: {
+            type: "melee",
+            damage: 16,
+            range: 1.2,
+            interval: 1.3
+        },
+        moveSpeed: 1.1,
+        flying: true,
+        passive: {
+            name: "天空の守護",
+            effect: "空戦マスを移動可能、落とし穴の影響を受けない、被ダメージ-15%"
+        },
+        active: {
+            name: "閃光斬り",
+            manaCost: 40,
+            cooldown: 15,
+            effect: {
+                type: "aoe_damage",
+                damage: 40,
+                range: 2
+            }
+        },
+        unlocked: false,
+        description: "空戦タンク、高防御、範囲攻撃"
     }
 };

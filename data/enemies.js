@@ -667,5 +667,67 @@ const ENEMY_DATA = {
             rewardMultiplier: 1.3
         },
         description: "範囲攻撃・遠隔砲撃"
+    },
+    wyvern: {
+        id: "wyvern",
+        name: "ワイバーン",
+        hp: 180,
+        maxHp: 180,
+        speed: 1.3,
+        baseSpeed: 1.3,
+        abilities: ["flying"],
+        attack: {
+            type: "melee",
+            damage: 16,
+            range: 1.2,
+            interval: 1.3,
+            targets: ["monster", "trap"]
+        },
+        resist: {
+            ground_trap: 1.0,
+            knockback: 0.3
+        },
+        flying: true,
+        soulReward: 14,
+        manaReward: 3,
+        aiType: "aggressive",
+        chargeSpeed: 1.5,
+        levelScaling: {
+            hpMultiplier: 1.16,
+            damageMultiplier: 1.14,
+            rewardMultiplier: 1.3
+        },
+        description: "空戦ユニット・地上罠無効・高速移動"
+    },
+    griffin: {
+        id: "griffin",
+        name: "グリフォン",
+        hp: 220,
+        maxHp: 220,
+        speed: 1.4,
+        baseSpeed: 1.4,
+        abilities: ["flying", "ranged_attack"],
+        attack: {
+            type: "ranged",
+            damage: 14,
+            range: 4,
+            interval: 1.4,
+            targets: ["trap", "monster"]
+        },
+        resist: {
+            ground_trap: 1.0,
+            physical: 0.1
+        },
+        flying: true,
+        soulReward: 16,
+        manaReward: 3,
+        aiType: "sniper",
+        keepDistance: 3.5,
+        levelScaling: {
+            hpMultiplier: 1.17,
+            damageMultiplier: 1.15,
+            rewardMultiplier: 1.3
+        },
+        description: "空戦ユニット・遠隔攻撃・地上罠無効"
     }
 };

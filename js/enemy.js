@@ -1,3 +1,91 @@
+const ENEMY_BEHAVIOR_PROFILES = {
+    normal: {
+        advance: 1.0,
+        pressure_traps: 0.6,
+        hunt: 0.8,
+        support: 0.4,
+        regroup: 0.3
+    },
+    cautious: {
+        advance: 0.9,
+        pressure_traps: 1.1,
+        hunt: 0.5,
+        support: 0.6,
+        regroup: 0.6
+    },
+    aggressive: {
+        advance: 1.2,
+        pressure_traps: 0.3,
+        hunt: 1.2,
+        support: 0.2,
+        regroup: 0.2
+    },
+    sniper: {
+        advance: 0.9,
+        pressure_traps: 0.5,
+        hunt: 1.0,
+        support: 0.3,
+        regroup: 0.4
+    },
+    support: {
+        advance: 0.7,
+        pressure_traps: 0.4,
+        hunt: 0.3,
+        support: 1.3,
+        regroup: 0.9
+    }
+};
+
+const ENEMY_INTENT_SPEED_MODIFIERS = {
+    advance: 1.05,
+    pressure_traps: 0.85,
+    hunt: 1.0,
+    support: 1.1,
+    regroup: 0.75
+};
+
+const ENEMY_INTENT_ORDER = ['advance', 'pressure_traps', 'hunt', 'support', 'regroup'];
+
+function pickIntentByWeight(weights) {
+    let total = 0;
+    for (const intent of ENEMY_INTENT_ORDER) {
+        const weight = Math.max(0, weights[intent] || 0);
+        total += weight;
+    }
+
+    if (total <= 0) {
+        return 'advance';
+    }
+
+    let roll = Math.random() * total;
+    for (const intent of ENEMY_INTENT_ORDER) {
+        const weight = Math.max(0, weights[intent] || 0);
+        if (weight === 0) continue;
+        roll -= weight;
+        if (roll <= 0) {
+            return intent;
+        }
+    }
+
+    return 'advance';
+}
+
+function pickRandomIntent() {
+    const idx = Math.floor(Math.random() * ENEMY_INTENT_ORDER.length);
+    return ENEMY_INTENT_ORDER[idx] || 'advance';
+}
+
+function randomInRange(min, max) {
+    return min + Math.random() * (max - min);
+}
+
+const ENEMY_CARDINAL_DIRECTIONS = {
+    up: { name: 'up', dx: 0, dy: -1 },
+    down: { name: 'down', dx: 0, dy: 1 },
+    left: { name: 'left', dx: -1, dy: 0 },
+    right: { name: 'right', dx: 1, dy: 0 }
+};
+const ENEMY_DIRECTION_ORDER = ['up', 'down', 'left', 'right'];
 /**
  * 敵クラス
  * プレイヤーのコアを目指して侵攻してくる敵ユニット
@@ -72,6 +160,10 @@ class Enemy {
         this.path = path;
         this.pathIndex = 0;
         this.pathProgress = 0;
+        this.stepTargetTile = null;
+        this.stepTargetWorld = null;
+        this.currentDirectionName = null;
+        this.forceDirectionChange = false;
 
         // 位置
         const startPos = game.grid.gridToWorld(path[0].x, path[0].y);
@@ -120,6 +212,16 @@ class Enemy {
 
         // レベルに応じてスキルを獲得
         this.initializeSkillsForLevel();
+
+        // 行動意図
+        this.behaviorProfile = this.createBehaviorProfile(this.data.aiType);
+        this.currentIntent = 'advance';
+        this.intentTimer = this.getNextIntentDuration();
+        this.tacticalSnapshot = null;
+        this.intentBias = this.generateIntentBias();
+        this.actionPreference = this.generateActionPreference();
+        this.speedJitterFactor = 1;
+        this.speedJitterTimer = 0;
     }
 
     initializeSkillsForLevel() {
@@ -128,6 +230,37 @@ class Enemy {
         for (let i = 0; i < skillCount; i++) {
             this.learnRandomSkill();
         }
+    }
+
+    createBehaviorProfile(aiType = 'normal') {
+        const baseProfile = ENEMY_BEHAVIOR_PROFILES[aiType] || ENEMY_BEHAVIOR_PROFILES.normal;
+        return Object.assign({}, baseProfile);
+    }
+
+    getNextIntentDuration() {
+        const min = ENEMY_AI_CONSTANTS.INTENT_MIN_DURATION || 1.5;
+        const max = ENEMY_AI_CONSTANTS.INTENT_MAX_DURATION || (min + 1);
+        const span = Math.max(0.1, max - min);
+        return min + Math.random() * span;
+    }
+
+    generateIntentBias() {
+        const variance = ENEMY_AI_CONSTANTS.INTENT_PERSONALITY_VARIANCE || 0.2;
+        const bias = {};
+        for (const intent of ENEMY_INTENT_ORDER) {
+            bias[intent] = randomInRange(-variance, variance);
+        }
+        return bias;
+    }
+
+    generateActionPreference() {
+        const variance = ENEMY_AI_CONSTANTS.ACTION_PREF_VARIANCE || 0.2;
+        return {
+            ranged_attack: randomInRange(-variance, variance),
+            area_attack: randomInRange(-variance, variance),
+            heal: randomInRange(-variance, variance),
+            barrier: randomInRange(-variance, variance)
+        };
     }
 
     learnRandomSkill() {
@@ -209,6 +342,172 @@ class Enemy {
         }
     }
 
+    updateBehaviorState(deltaTime, game) {
+        if (!game) return;
+
+        const dt = Math.max(0, deltaTime || 0);
+        this.updateSpeedJitter(dt);
+
+        this.tacticalSnapshot = this.buildTacticalSnapshot(game);
+        const forcedIntent = this.getForcedIntent(this.tacticalSnapshot);
+
+        if (forcedIntent && forcedIntent !== this.currentIntent) {
+            this.setIntent(forcedIntent);
+            return;
+        }
+
+        const chaosChance = (ENEMY_AI_CONSTANTS.CHAOTIC_INTENT_CHANCE || 0) * dt;
+        if (chaosChance > 0 && Math.random() < chaosChance) {
+            this.setIntent(pickRandomIntent());
+            return;
+        }
+
+        this.intentTimer -= dt;
+        if (this.intentTimer > 0) {
+            return;
+        }
+
+        const weights = this.computeIntentWeights(this.tacticalSnapshot);
+        const nextIntent = pickIntentByWeight(weights);
+        this.setIntent(nextIntent);
+    }
+
+    setIntent(intent) {
+        this.currentIntent = intent || 'advance';
+        this.intentTimer = this.getNextIntentDuration();
+    }
+
+    buildTacticalSnapshot(game) {
+        const snapshot = {
+            hpRatio: this.maxHp > 0 ? this.hp / this.maxHp : 0,
+            pathProgress: this.pathProgress || 0,
+            injuredAllies: [],
+            nearbyTraps: [],
+            nearbyMonsters: []
+        };
+
+        const allyThreshold = ENEMY_AI_CONSTANTS.SUPPORT_LOW_HP_THRESHOLD || 0.65;
+
+        for (const enemy of game.enemies) {
+            if (enemy.dead || enemy === this) continue;
+            const hpRatio = enemy.maxHp > 0 ? enemy.hp / enemy.maxHp : 0;
+            if (hpRatio < 1) {
+                const dist = distance(this.x, this.y, enemy.x, enemy.y);
+                snapshot.injuredAllies.push({ enemy, hpRatio, dist, critical: hpRatio < allyThreshold });
+            }
+        }
+
+        const trapRange = Math.max(1, this.detectRadius || 1) * game.grid.tileSize * 1.5;
+        for (const trap of game.traps) {
+            if (trap.destroyed) continue;
+            const trapPos = game.grid.gridToWorld(trap.gridX, trap.gridY);
+            const dist = distance(this.x, this.y, trapPos.x, trapPos.y);
+            if (dist <= trapRange) {
+                const danger = this.calculateTrapDanger(trap);
+                snapshot.nearbyTraps.push({ trap, dist, danger });
+            }
+        }
+        snapshot.trapDangerScore = snapshot.nearbyTraps.reduce((sum, info) => sum + info.danger, 0);
+
+        const monsterRange = (this.data.attack ? this.data.attack.range : 1) * game.grid.tileSize * 1.75;
+        for (const monster of game.monsters) {
+            if (monster.dead) continue;
+            const dist = distance(this.x, this.y, monster.x, monster.y);
+            if (dist <= monsterRange) {
+                snapshot.nearbyMonsters.push({ monster, dist });
+            }
+        }
+
+        return snapshot;
+    }
+
+    calculateTrapDanger(trap) {
+        if (!trap || !trap.data || !trap.data.effect) {
+            return 0;
+        }
+
+        const effect = trap.data.effect;
+        let danger = 0;
+        if (effect.damage) danger += effect.damage;
+        if (effect.instant) danger += effect.instant;
+        if (effect.dot) {
+            danger += (effect.dot.dps || 0) * (effect.dot.duration || 0);
+        }
+        if (effect.slow && effect.slow.amount) {
+            danger += effect.slow.amount * 20;
+        }
+
+        return danger;
+    }
+
+    computeIntentWeights(snapshot) {
+        const weights = this.createBehaviorProfile(this.data.aiType);
+        for (const intent of ENEMY_INTENT_ORDER) {
+            weights[intent] = (weights[intent] || 0) + (this.intentBias[intent] || 0);
+        }
+
+        if (!snapshot) {
+            return weights;
+        }
+
+        const hpRatio = snapshot.hpRatio || 0;
+        const allyCount = snapshot.injuredAllies.length;
+        const criticalAllies = snapshot.injuredAllies.filter(a => a.critical).length;
+        const trapCount = snapshot.nearbyTraps.length;
+        const monsterCount = snapshot.nearbyMonsters.length;
+
+        weights.advance += Math.max(0, 1 - (snapshot.pathProgress || 0)) * 0.4;
+        weights.hunt += monsterCount * 0.3;
+        weights.pressure_traps += trapCount * 0.2 + (snapshot.trapDangerScore || 0) * 0.002;
+        weights.support += allyCount * 0.2 + criticalAllies * 0.4;
+        weights.regroup += Math.max(0, (ENEMY_AI_CONSTANTS.RETREAT_HP_THRESHOLD || 0.3) - hpRatio) * 2;
+
+        // Sticky intent keeps variety without thrashing
+        weights[this.currentIntent] = (weights[this.currentIntent] || 0) + 0.2;
+
+        const noise = ENEMY_AI_CONSTANTS.INTENT_RANDOM_NOISE || 0.2;
+        for (const intent of ENEMY_INTENT_ORDER) {
+            weights[intent] = (weights[intent] || 0) + Math.random() * noise;
+        }
+
+        return weights;
+    }
+
+    updateSpeedJitter(deltaTime) {
+        const variance = ENEMY_AI_CONSTANTS.MICRO_SPEED_JITTER || 0;
+        if (variance <= 0) {
+            this.speedJitterFactor = 1;
+            return;
+        }
+
+        this.speedJitterTimer -= deltaTime;
+        if (this.speedJitterTimer <= 0 || !isFinite(this.speedJitterTimer)) {
+            this.speedJitterFactor = 1 + randomInRange(-variance, variance);
+            this.speedJitterTimer = 0.8 + Math.random() * 1.2;
+        }
+    }
+
+    getForcedIntent(snapshot) {
+        if (!snapshot) return null;
+
+        const hpRatio = snapshot.hpRatio || 0;
+        const retreatThreshold = ENEMY_AI_CONSTANTS.RETREAT_HP_THRESHOLD || 0.3;
+        if (!this.boss && hpRatio <= retreatThreshold) {
+            return 'regroup';
+        }
+
+        const lowHpAllies = snapshot.injuredAllies.filter(a => a.critical);
+        if (lowHpAllies.length > 0 && (this.abilities.includes('heal') || this.abilities.includes('barrier'))) {
+            return 'support';
+        }
+
+        if (snapshot.trapDangerScore > 60 && this.abilities.includes('disarm')) {
+            return 'pressure_traps';
+        }
+
+        return null;
+    }
+
     update(deltaTime, game) {
         if (this.dead || this.reachedCore) return;
 
@@ -223,6 +522,8 @@ class Enemy {
 
         // 状態異常更新
         this.statusEffects.update(deltaTime);
+
+        this.updateBehaviorState(deltaTime, game);
 
         // スタン中は移動しない
         if (this.stunned) {
@@ -263,61 +564,229 @@ class Enemy {
             return;
         }
 
-        // 近くのモンスターを探す
+        // �߂��̃����X�^�[��T��
         const nearbyMonster = this.findNearbyMonster(game);
 
         if (nearbyMonster) {
-            // 攻撃範囲内かチェック
+            // �U���͈͓����`�F�b�N
             const dist = distance(this.x, this.y, nearbyMonster.x, nearbyMonster.y);
             const attackRange = this.data.attack
                 ? this.data.attack.range * game.grid.tileSize
                 : game.grid.tileSize * 0.8;
 
             if (dist <= attackRange) {
-                // 射程内: 戦闘モード（移動停止）
+                // �˒���: �퓬���[�h�i�ړ���~�j
+                this.clearStepTarget();
                 this.combatMonster(nearbyMonster, deltaTime, game);
                 return;
             } else {
-                // 射程外: モンスターに向かって移動
+                // �˒��O: �����X�^�[�Ɍ������Ĉړ�
+                this.clearStepTarget();
                 this.moveTowardsMonster(nearbyMonster, deltaTime, game);
                 return;
             }
         }
 
-        // AI行動パターンを適用
+        // AI�s���p�^�[����K�p
         this.applyAIBehavior(game);
 
-        const targetPos = game.grid.gridToWorld(
-            this.path[this.pathIndex].x,
-            this.path[this.pathIndex].y
-        );
+        this.ensureStepTarget(game);
 
-        const dx = targetPos.x - this.x;
-        const dy = targetPos.y - this.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (!this.stepTargetWorld) {
+            return;
+        }
 
-        const moveAmount = this.moveSpeed * game.grid.tileSize * deltaTime;
+        this.advanceTowardsStepTarget(deltaTime, game);
+    }
 
-        if (dist < Enemy.WAYPOINT_REACH_DISTANCE) {
-            // 次のウェイポイントへ
-            this.pathIndex++;
-            this.pathProgress = this.pathIndex / this.path.length;
-        } else {
-            // 移動先の位置を計算
-            const newX = this.x + (dx / dist) * moveAmount;
-            const newY = this.y + (dy / dist) * moveAmount;
-
-            // 他の敵との衝突チェック
-            if (!this.wouldCollideWithEnemy(newX, newY, game)) {
-                this.x = newX;
-                this.y = newY;
-
-                // グリッド上の位置を更新
-                this.updateGridPosition(game);
-            }
-            // 衝突する場合は移動しない（その場で待機）
+    clearStepTarget(resetForce = true) {
+        this.stepTargetTile = null;
+        this.stepTargetWorld = null;
+        if (resetForce) {
+            this.forceDirectionChange = false;
         }
     }
+
+    ensureStepTarget(game) {
+        if (this.stepTargetTile) {
+            if (this.isTileBlocked(this.stepTargetTile.x, this.stepTargetTile.y, game)) {
+                this.forceDirectionChange = true;
+                this.clearStepTarget(false);
+            } else {
+                return;
+            }
+        }
+
+        const currentTile = game.grid.worldToGrid(this.x, this.y);
+        if (!currentTile) {
+            return;
+        }
+
+        const direction = this.chooseRandomDirection(currentTile, game, this.forceDirectionChange);
+        this.forceDirectionChange = false;
+
+        if (!direction) {
+            return;
+        }
+
+        const targetTile = {
+            x: currentTile.x + direction.dx,
+            y: currentTile.y + direction.dy
+        };
+
+        this.stepTargetTile = targetTile;
+        this.stepTargetWorld = game.grid.gridToWorld(targetTile.x, targetTile.y);
+        this.currentDirectionName = direction.name;
+    }
+
+    chooseRandomDirection(currentTile, game, forcedChange = false) {
+        const forwardDir = this.getForwardDirection(currentTile);
+        const attempted = new Set();
+
+        for (let i = 0; i < 8; i++) {
+            const continueRoll = forcedChange ? 1 : Math.random();
+            let candidateName = null;
+
+            if (continueRoll < 0.6 && forwardDir) {
+                candidateName = forwardDir.name;
+            } else {
+                const directionRoll = Math.random();
+                if (directionRoll < 0.25) {
+                    candidateName = 'up';
+                } else if (directionRoll < 0.5) {
+                    candidateName = 'down';
+                } else if (directionRoll < 0.75) {
+                    candidateName = 'left';
+                } else {
+                    candidateName = 'right';
+                }
+            }
+
+            forcedChange = false;
+
+            if (attempted.has(candidateName)) {
+                if (attempted.size >= 4) {
+                    break;
+                }
+                continue;
+            }
+
+            attempted.add(candidateName);
+
+            if (this.canMoveToDirection(candidateName, currentTile, game)) {
+                return ENEMY_CARDINAL_DIRECTIONS[candidateName];
+            }
+
+            if (forwardDir && candidateName === forwardDir.name) {
+                forcedChange = true;
+            }
+        }
+
+        for (const dirName of ENEMY_DIRECTION_ORDER) {
+            if (this.canMoveToDirection(dirName, currentTile, game)) {
+                return ENEMY_CARDINAL_DIRECTIONS[dirName];
+            }
+        }
+
+        return null;
+    }
+
+    getForwardDirection(currentTile) {
+        if (!this.path || this.path.length === 0) {
+            return null;
+        }
+
+        for (let i = this.pathIndex; i < this.path.length; i++) {
+            const waypoint = this.path[i];
+            if (!waypoint) continue;
+
+            if (waypoint.x === currentTile.x && waypoint.y === currentTile.y) {
+                continue;
+            }
+
+            const diffX = waypoint.x - currentTile.x;
+            const diffY = waypoint.y - currentTile.y;
+
+            if (Math.abs(diffX) >= Math.abs(diffY)) {
+                if (diffX > 0) return ENEMY_CARDINAL_DIRECTIONS.right;
+                if (diffX < 0) return ENEMY_CARDINAL_DIRECTIONS.left;
+            }
+
+            if (diffY > 0) return ENEMY_CARDINAL_DIRECTIONS.down;
+            if (diffY < 0) return ENEMY_CARDINAL_DIRECTIONS.up;
+        }
+
+        return null;
+    }
+
+    canMoveToDirection(directionName, currentTile, game) {
+        const dir = ENEMY_CARDINAL_DIRECTIONS[directionName];
+        if (!dir) return false;
+
+        const targetX = currentTile.x + dir.dx;
+        const targetY = currentTile.y + dir.dy;
+
+        if (this.isTileBlocked(targetX, targetY, game)) {
+            return false;
+        }
+
+        const worldPos = game.grid.gridToWorld(targetX, targetY);
+        return !this.wouldCollideWithEnemy(worldPos.x, worldPos.y, game);
+    }
+
+    isTileBlocked(tileX, tileY, game) {
+        const tile = game.grid.getTile(tileX, tileY);
+        if (!tile || !tile.walkable) {
+            return true;
+        }
+
+        // Friendly presence is handled via wouldCollideWithEnemy() so we allow entering
+        // the tile to avoid deadlocks when allies queue up behind a single unit.
+        return false;
+    }
+
+    advanceTowardsStepTarget(deltaTime, game) {
+        if (!this.stepTargetWorld) {
+            return;
+        }
+
+        const dx = this.stepTargetWorld.x - this.x;
+        const dy = this.stepTargetWorld.y - this.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < Enemy.WAYPOINT_REACH_DISTANCE || dist === 0) {
+            this.x = this.stepTargetWorld.x;
+            this.y = this.stepTargetWorld.y;
+            this.updateGridPosition(game);
+            this.handleStepTargetReached();
+            return;
+        }
+
+        const moveAmount = this.moveSpeed * game.grid.tileSize * deltaTime;
+        const travel = Math.min(moveAmount, dist);
+        const newX = this.x + (dx / dist) * travel;
+        const newY = this.y + (dy / dist) * travel;
+
+        if (this.wouldCollideWithEnemy(newX, newY, game)) {
+            this.forceDirectionChange = true;
+            this.clearStepTarget(false);
+            return;
+        }
+
+        this.x = newX;
+        this.y = newY;
+        this.updateGridPosition(game);
+
+        const remaining = distance(this.x, this.y, this.stepTargetWorld.x, this.stepTargetWorld.y);
+        if (remaining < Enemy.WAYPOINT_REACH_DISTANCE) {
+            this.handleStepTargetReached();
+        }
+    }
+
+    handleStepTargetReached() {
+        this.clearStepTarget();
+    }
+
 
     /**
      * 指定位置で他の敵と衝突するかチェック
@@ -359,11 +828,51 @@ class Enemy {
             this.gridX = gridPos.x;
             this.gridY = gridPos.y;
 
+            // 落とし穴チェック: 空戦ユニット以外が落とし穴に入ったら即死
+            // ドラッグアンドドロップ中は落とし穴の効果を発動しない
+            if (newTile && newTile.type === 'pit' && !this.flying) {
+                if (!game.isDragging) {
+                    console.log(`[落とし穴] ${this.name}が落とし穴に落ちました (isDragging: ${game.isDragging})`);
+                    this.hp = 0;
+                    this.dead = true;
+                    game.ui.showMessage(`${this.name}が落とし穴に落ちて即死しました！`, 'success');
+                    // タイルに登録せずに終了
+                    return;
+                } else {
+                    console.log(`[落とし穴スキップ] ${this.name}がドラッグ中のため落とし穴をスキップ (isDragging: ${game.isDragging})`);
+                }
+            }
+
             // 新しいタイルに他の敵がいない場合のみ登録
             // 既に他の敵がいる場合は上書きしない（複数の敵が同じタイルにいることは許容）
             if (newTile && !newTile.enemy) {
                 newTile.enemy = this;
             }
+
+            if (newTile) {
+                this.updatePathProgressFromTile(newTile);
+            }
+        }
+    }
+
+    updatePathProgressFromTile(tile) {
+        if (!this.path || this.path.length === 0) {
+            return;
+        }
+
+        for (let i = this.pathIndex; i < this.path.length; i++) {
+            const waypoint = this.path[i];
+            if (!waypoint) continue;
+
+            if (waypoint.x === tile.x && waypoint.y === tile.y) {
+                this.pathIndex = i + 1;
+                this.pathProgress = Math.min(1, this.pathIndex / this.path.length);
+                break;
+            }
+        }
+
+        if (tile.type === 'core' || this.pathIndex >= this.path.length) {
+            this.reachedCore = true;
         }
     }
 
@@ -468,32 +977,38 @@ class Enemy {
     }
 
     applyAIBehavior(game) {
+        const intent = this.currentIntent || 'advance';
+        const intentModifier = ENEMY_INTENT_SPEED_MODIFIERS[intent] || 1;
+        let speed = this.baseSpeed * intentModifier;
+
+        const archetypeModifier = this.applyArchetypeBehavior(game);
+        speed *= archetypeModifier;
+        const jitter = this.speedJitterFactor || 1;
+        speed *= jitter;
+
+        const minSpeed = this.baseSpeed * 0.4;
+        const maxSpeed = this.baseSpeed * 1.8;
+        this.moveSpeed = Math.max(minSpeed, Math.min(maxSpeed, speed));
+    }
+
+    applyArchetypeBehavior(game) {
         const aiType = this.data.aiType || 'normal';
 
         switch(aiType) {
             case 'cautious':
-                // 盗賊: 罠を避ける動き
-                this.cautiousBehavior(game);
-                break;
+                return this.cautiousBehavior(game);
             case 'aggressive':
-                // 戦士: HP減少で加速
-                this.aggressiveBehavior();
-                break;
+                return this.aggressiveBehavior();
             case 'sniper':
-                // レンジャー: 距離を保つ
-                this.sniperBehavior(game);
-                break;
+                return this.sniperBehavior(game);
             case 'support':
-                // 聖職者: 味方に近づく
-                this.supportBehavior(game);
-                break;
+                return this.supportBehavior(game);
             default:
-                this.moveSpeed = this.baseSpeed;
+                return 1;
         }
     }
 
     cautiousBehavior(game) {
-        // 罠が近くにあれば減速
         const nearbyTraps = game.traps.filter(trap => {
             const trapPos = game.grid.gridToWorld(trap.gridX, trap.gridY);
             const dist = distance(this.x, this.y, trapPos.x, trapPos.y);
@@ -501,23 +1016,21 @@ class Enemy {
         });
 
         if (nearbyTraps.length > 0) {
-            this.moveSpeed = this.baseSpeed * 0.5; // 50%減速
-        } else {
-            this.moveSpeed = this.baseSpeed * 1.1; // 安全な場所では加速
+            return 0.5;
         }
+
+        return 1.1;
     }
 
     aggressiveBehavior() {
-        // HP50%以下で加速
         if (this.hp < this.maxHp * 0.5 && this.data.chargeSpeed) {
-            this.moveSpeed = this.baseSpeed * this.data.chargeSpeed;
-        } else {
-            this.moveSpeed = this.baseSpeed;
+            return this.data.chargeSpeed;
         }
+
+        return 1;
     }
 
     sniperBehavior(game) {
-        // モンスターが近すぎたら後退
         const nearbyMonsters = game.monsters.filter(monster => {
             if (monster.dead) return false;
             const dist = distance(this.x, this.y, monster.x, monster.y);
@@ -525,60 +1038,55 @@ class Enemy {
         });
 
         if (nearbyMonsters.length > 0) {
-            // 後退モード: 少し遅く
-            this.moveSpeed = this.baseSpeed * 0.7;
-        } else {
-            this.moveSpeed = this.baseSpeed;
+            return 0.7;
         }
+
+        return 1;
     }
 
     supportBehavior(game) {
-        // 負傷した味方がいれば急ぐ
         const injuredAllies = game.enemies.filter(enemy => {
             return !enemy.dead && enemy !== this && enemy.hp < enemy.maxHp * 0.7;
         });
 
         if (injuredAllies.length > 0) {
-            this.moveSpeed = this.baseSpeed * 1.2; // 急いで近づく
-        } else {
-            this.moveSpeed = this.baseSpeed;
+            return 1.2;
         }
+
+        return 1;
     }
 
     updateAbilities(deltaTime, game) {
-        // クールダウン更新
         if (this.attackCooldown > 0) this.attackCooldown -= deltaTime;
         if (this.healCooldown > 0) this.healCooldown -= deltaTime;
         if (this.barrierCooldown > 0) this.barrierCooldown -= deltaTime;
         if (this.selfHealCooldown > 0) this.selfHealCooldown -= deltaTime;
         if (this.holyZoneCooldown > 0) this.holyZoneCooldown -= deltaTime;
 
-        // レンジャー - 遠隔攻撃
-        if (this.abilities.includes('ranged_attack') && this.attackCooldown <= 0) {
-            this.rangedAttack(game);
+        const candidates = this.buildActionCandidates(game);
+        const selectionVariance = ENEMY_AI_CONSTANTS.ACTION_SELECTION_VARIANCE || 0.2;
+
+        for (const candidate of candidates) {
+            const preference = this.actionPreference[candidate.name] || 0;
+            candidate.score = Math.max(0, candidate.score + preference);
+            candidate.orderScore = candidate.score + Math.random() * selectionVariance;
         }
 
-        // 砲撃兵 - 範囲攻撃
-        if (this.abilities.includes('area_attack') && this.attackCooldown <= 0) {
-            this.areaAttack(game);
+        candidates.sort((a, b) => (b.orderScore || 0) - (a.orderScore || 0));
+
+        for (const candidate of candidates) {
+            if (candidate.score <= 0) continue;
+            if (candidate.cooldownKey && this[candidate.cooldownKey] > 0) continue;
+            const executed = candidate.execute();
+            if (executed && typeof candidate.afterExecute === 'function') {
+                candidate.afterExecute();
+            }
         }
 
-        // 聖職者 - 回復
-        if (this.abilities.includes('heal') && this.healCooldown <= 0) {
-            this.healAllies(game);
-        }
-
-        // 精霊使い - バリア
-        if (this.abilities.includes('barrier') && this.barrierCooldown <= 0) {
-            this.applyBarrier(game);
-        }
-
-        // 罠解除
         if (this.abilities.includes('disarm')) {
             this.attemptDisarm(deltaTime, game);
         }
 
-        // ボススキル
         if (this.boss) {
             if (this.selfHealCooldown <= 0 && this.hp < this.maxHp * Enemy.BOSS_HEAL_THRESHOLD) {
                 this.selfHeal();
@@ -589,7 +1097,6 @@ class Enemy {
             }
         }
 
-        // 聖域エフェクトの更新
         if (this.holyZoneEffect) {
             this.holyZoneEffect.duration -= deltaTime;
             if (this.holyZoneEffect.duration > 0) {
@@ -599,6 +1106,67 @@ class Enemy {
             }
         }
     }
+
+
+    buildActionCandidates(game) {
+        const candidates = [];
+        if (!game) {
+            return candidates;
+        }
+
+        if (this.abilities.includes('ranged_attack') && this.data.attack && this.attackCooldown <= 0) {
+            const rangedScore = this.evaluateRangedAction(game);
+            if (rangedScore > 0) {
+                candidates.push({
+                    name: 'ranged_attack',
+                    score: rangedScore,
+                    cooldownKey: 'attackCooldown',
+                    execute: () => this.rangedAttack(game)
+                });
+            }
+        }
+
+        if (this.abilities.includes('area_attack') && this.data.attack && this.data.attack.areaRadius && this.attackCooldown <= 0) {
+            const areaPlan = this.planAreaAttack(game);
+            if (areaPlan && areaPlan.hitCount > 0) {
+                const baseScore = 1 + areaPlan.hitCount * 0.5;
+                const intentBonus = this.currentIntent === 'hunt' ? 0.4 : 0;
+                candidates.push({
+                    name: 'area_attack',
+                    score: baseScore + intentBonus,
+                    cooldownKey: 'attackCooldown',
+                    execute: () => this.areaAttack(game, areaPlan)
+                });
+            }
+        }
+
+        if (this.abilities.includes('heal') && this.data.heal && this.healCooldown <= 0) {
+            const healScore = this.evaluateHealAction(game);
+            if (healScore.score > 0) {
+                candidates.push({
+                    name: 'heal',
+                    score: healScore.score,
+                    cooldownKey: 'healCooldown',
+                    execute: () => this.healAllies(game, healScore.targets)
+                });
+            }
+        }
+
+        if (this.abilities.includes('barrier') && this.data.barrier && this.barrierCooldown <= 0) {
+            const barrierScore = this.evaluateBarrierAction(game);
+            if (barrierScore.score > 0) {
+                candidates.push({
+                    name: 'barrier',
+                    score: barrierScore.score,
+                    cooldownKey: 'barrierCooldown',
+                    execute: () => this.applyBarrier(game, barrierScore.targets)
+                });
+            }
+        }
+
+        return candidates;
+    }
+
 
     rangedAttack(game) {
         // データ構造の検証（エラーログ強化）
@@ -610,7 +1178,11 @@ class Enemy {
             } else if (!this.data.attack.damage) {
                 console.warn(`${this.name}(ID:${this.data.id})のattack.damageが未定義です。現在のattackデータ:`, this.data.attack);
             }
-            return;
+            return false;
+        }
+
+        if (this.attackCooldown > 0) {
+            return false;
         }
 
         // 近くの罠またはモンスターを攻撃
@@ -649,39 +1221,88 @@ class Enemy {
             }
         }
 
-        if (closestTarget) {
-            // 攻撃アニメーション開始
-            this.isAttackAnimating = true;
-            this.attackAnimationTimer = 0.3;
-            this.attackTarget = closestTarget;
-
-            closestTarget.takeDamage(this.data.attack.damage);
-            this.attackCooldown = this.data.attack.interval;
+        if (!closestTarget) {
+            return false;
         }
+
+        // 攻撃アニメーション開始
+        this.isAttackAnimating = true;
+        this.attackAnimationTimer = 0.3;
+        this.attackTarget = closestTarget;
+
+        closestTarget.takeDamage(this.data.attack.damage);
+        this.attackCooldown = this.data.attack.interval;
+
+        return true;
     }
 
-    areaAttack(game) {
-        // データ構造の検証
+    areaAttack(game, attackPlan = null) {
         if (!this.data.attack || !this.data.attack.range || !this.data.attack.damage || !this.data.attack.areaRadius) {
             console.warn(`${this.name}(ID:${this.data.id})の範囲攻撃データが不完全です。`);
-            return;
+            return false;
         }
 
-        // 攻撃対象を探す
+        const plan = attackPlan || this.planAreaAttack(game);
+        if (!plan) {
+            return false;
+        }
+
         const targets = [...game.traps, ...game.monsters];
-        let bestTarget = null;
+        this.isAttackAnimating = true;
+        this.attackAnimationTimer = 0.5;
+        this.attackTarget = plan.primaryTarget;
+        this.attackTargetPos = plan.position;
+
+        for (const target of targets) {
+            if (target.dead || target.destroyed) continue;
+
+            let tx, ty;
+            if (target.gridX !== undefined && target.gridY !== undefined) {
+                const pos = game.grid.gridToWorld(target.gridX, target.gridY);
+                tx = pos.x;
+                ty = pos.y;
+            } else if (target.x !== undefined && target.y !== undefined) {
+                tx = target.x;
+                ty = target.y;
+            } else {
+                continue;
+            }
+
+            const areaDist = distance(plan.position.x, plan.position.y, tx, ty);
+            if (areaDist <= plan.areaRadius) {
+                const actualDamage = target.takeDamage ?
+                    target.takeDamage(this.data.attack.damage) :
+                    this.data.attack.damage;
+
+                if (game.effectPool) {
+                    game.effectPool.createDamageText(tx, ty, actualDamage || this.data.attack.damage, false);
+                }
+            }
+        }
+
+        if (game.effectPool) {
+            game.effectPool.createExplosion(plan.position.x, plan.position.y, plan.areaRadius);
+        }
+
+        this.attackCooldown = this.data.attack.interval;
+        return true;
+    }
+
+    planAreaAttack(game) {
+        if (!game || !this.data.attack || !this.data.attack.range || !this.data.attack.areaRadius) {
+            return null;
+        }
+
+        const targets = [...game.traps, ...game.monsters];
+        let bestPlan = null;
         let maxHitCount = 0;
-        let bestTargetPos = null;
         const attackRange = this.data.attack.range * game.grid.tileSize;
         const areaRadius = this.data.attack.areaRadius * game.grid.tileSize;
 
-        // 各ターゲットを中心にした場合のヒット数をカウント
         for (const target of targets) {
             if (target.dead || target.destroyed) continue;
 
             let targetX, targetY;
-
-            // 座標取得
             if (target.gridX !== undefined && target.gridY !== undefined) {
                 const pos = game.grid.gridToWorld(target.gridX, target.gridY);
                 targetX = pos.x;
@@ -693,11 +1314,9 @@ class Enemy {
                 continue;
             }
 
-            // 射程内かチェック
             const dist = distance(this.x, this.y, targetX, targetY);
             if (dist > attackRange) continue;
 
-            // この位置を中心にした場合のヒット数をカウント
             let hitCount = 0;
             for (const t of targets) {
                 if (t.dead || t.destroyed) continue;
@@ -714,100 +1333,104 @@ class Enemy {
                     continue;
                 }
 
-                // 範囲内かチェック
                 const areaDist = distance(targetX, targetY, tx, ty);
                 if (areaDist <= areaRadius) {
                     hitCount++;
                 }
             }
 
-            // 最もヒット数の多い位置を選択
             if (hitCount > maxHitCount) {
                 maxHitCount = hitCount;
-                bestTarget = target;
-                bestTargetPos = { x: targetX, y: targetY };
+                bestPlan = {
+                    primaryTarget: target,
+                    position: { x: targetX, y: targetY },
+                    areaRadius,
+                    hitCount
+                };
             }
         }
 
-        if (bestTarget && bestTargetPos) {
-            // 攻撃アニメーション開始
-            this.isAttackAnimating = true;
-            this.attackAnimationTimer = 0.5; // 範囲攻撃は少し長め
-            this.attackTarget = bestTarget;
-            this.attackTargetPos = bestTargetPos; // 範囲攻撃の中心位置を記録
-
-            // 範囲内の全ターゲットにダメージ
-            for (const target of targets) {
-                if (target.dead || target.destroyed) continue;
-
-                let tx, ty;
-                if (target.gridX !== undefined && target.gridY !== undefined) {
-                    const pos = game.grid.gridToWorld(target.gridX, target.gridY);
-                    tx = pos.x;
-                    ty = pos.y;
-                } else if (target.x !== undefined && target.y !== undefined) {
-                    tx = target.x;
-                    ty = target.y;
-                } else {
-                    continue;
-                }
-
-                const areaDist = distance(bestTargetPos.x, bestTargetPos.y, tx, ty);
-                if (areaDist <= areaRadius) {
-                    const actualDamage = target.takeDamage ?
-                        target.takeDamage(this.data.attack.damage) :
-                        this.data.attack.damage;
-
-                    // ダメージエフェクト
-                    if (game.effectPool) {
-                        game.effectPool.createDamageText(tx, ty, actualDamage || this.data.attack.damage, false);
-                    }
-                }
-            }
-
-            // 範囲攻撃エフェクトを作成
-            if (game.effectPool) {
-                game.effectPool.createExplosion(bestTargetPos.x, bestTargetPos.y, areaRadius);
-            }
-
-            this.attackCooldown = this.data.attack.interval;
-        }
+        return bestPlan;
     }
 
-    healAllies(game) {
-        // データ構造の検証
-        if (!this.data.heal || !this.data.heal.range || !this.data.heal.amount) {
-            return;
+    evaluateRangedAction(game) {
+        if (!game || !this.data.attack || !this.data.attack.range) {
+            return 0;
+        }
+
+        const attackRange = this.data.attack.range * game.grid.tileSize;
+        let monsterCount = 0;
+        let trapCount = 0;
+
+        for (const monster of game.monsters) {
+            if (monster.dead) continue;
+            const dist = distance(this.x, this.y, monster.x, monster.y);
+            if (dist <= attackRange) {
+                monsterCount++;
+            }
+        }
+
+        for (const trap of game.traps) {
+            if (trap.destroyed) continue;
+            const trapPos = game.grid.gridToWorld(trap.gridX, trap.gridY);
+            const dist = distance(this.x, this.y, trapPos.x, trapPos.y);
+            if (dist <= attackRange) {
+                trapCount++;
+            }
+        }
+
+        const totalTargets = monsterCount + trapCount;
+        if (totalTargets === 0) {
+            return 0;
+        }
+
+        let score = 1 + totalTargets * 0.25;
+        if (this.currentIntent === 'hunt') {
+            score += monsterCount * 0.4;
+        }
+        if (this.currentIntent === 'pressure_traps') {
+            score += trapCount * 0.4;
+        }
+
+        return score;
+    }
+
+    evaluateHealAction(game) {
+        if (!game || !this.data.heal || !this.data.heal.range || !this.data.heal.amount) {
+            return { score: 0, targets: [] };
         }
 
         const healRange = this.data.heal.range * game.grid.tileSize;
-        let healedCount = 0;
+        const targets = [];
 
         for (const enemy of game.enemies) {
             if (enemy.dead || enemy === this) continue;
+            if (enemy.hp >= enemy.maxHp) continue;
 
             const dist = distance(this.x, this.y, enemy.x, enemy.y);
-
-            if (dist < healRange && enemy.hp < enemy.maxHp) {
-                enemy.hp = Math.min(enemy.hp + this.data.heal.amount, enemy.maxHp);
-                healedCount++;
-
-                // 浄化
-                if (this.abilities.includes('cleanse')) {
-                    enemy.statusEffects.cleanse();
-                }
+            if (dist <= healRange) {
+                targets.push(enemy);
             }
         }
 
-        if (healedCount > 0) {
-            this.healCooldown = this.data.heal.interval;
+        if (targets.length === 0) {
+            return { score: 0, targets: [] };
         }
+
+        const lowHpThreshold = ENEMY_AI_CONSTANTS.SUPPORT_LOW_HP_THRESHOLD || 0.65;
+        const criticalTargets = targets.filter(enemy => (enemy.hp / enemy.maxHp) < lowHpThreshold).length;
+
+        let score = 1 + targets.length * 0.3 + criticalTargets * 0.4;
+        if (this.currentIntent === 'support') {
+            score += 0.8;
+        }
+
+        return { score, targets };
     }
 
-    applyBarrier(game) {
-        // データ構造の検証
-        if (!this.data.barrier || !this.data.barrier.range || !this.data.barrier.amount) {
-            return;
+    evaluateBarrierAction(game) {
+        if (!game || !this.data.barrier || !this.data.barrier.range || !this.data.barrier.amount) {
+            return { score: 0, targets: [] };
         }
 
         const barrierRange = this.data.barrier.range * game.grid.tileSize;
@@ -815,29 +1438,132 @@ class Enemy {
 
         for (const enemy of game.enemies) {
             if (enemy.dead || enemy === this) continue;
-
             const dist = distance(this.x, this.y, enemy.x, enemy.y);
-
-            if (dist < barrierRange) {
-                allies.push({ enemy, dist });
+            if (dist <= barrierRange) {
+                allies.push({
+                    enemy,
+                    dist,
+                    hpRatio: enemy.maxHp > 0 ? enemy.hp / enemy.maxHp : 0
+                });
             }
         }
 
-        // 距離でソート
-        allies.sort((a, b) => a.dist - b.dist);
+        if (allies.length === 0) {
+            return { score: 0, targets: [] };
+        }
 
-        // 最大ターゲット数まで
+        allies.sort((a, b) => {
+            if (a.hpRatio === b.hpRatio) {
+                return a.dist - b.dist;
+            }
+            return a.hpRatio - b.hpRatio;
+        });
+
         const maxTargets = this.data.barrier.targets || 3;
-        for (let i = 0; i < Math.min(maxTargets, allies.length); i++) {
-            allies[i].enemy.barrier = (allies[i].enemy.barrier || 0) + this.data.barrier.amount;
+        const vulnerableAllies = allies.filter(info => !info.enemy.barrier || info.enemy.barrier <= 0).length;
+
+        let score = 0.8 + Math.min(maxTargets, allies.length) * 0.25 + vulnerableAllies * 0.2;
+        if (this.currentIntent === 'support') {
+            score += 0.5;
+        }
+
+        return { score, targets: allies };
+    }
+
+    healAllies(game, presetTargets = null) {
+        if (!this.data.heal || !this.data.heal.range || !this.data.heal.amount) {
+            return false;
+        }
+
+        const healRange = this.data.heal.range * game.grid.tileSize;
+        const targets = Array.isArray(presetTargets) && presetTargets.length
+            ? presetTargets
+            : game.enemies.filter(enemy => {
+                if (enemy.dead || enemy === this || enemy.hp >= enemy.maxHp) return false;
+                const dist = distance(this.x, this.y, enemy.x, enemy.y);
+                return dist <= healRange;
+            });
+
+        if (targets.length === 0) {
+            return false;
+        }
+
+        let healedCount = 0;
+        for (const enemy of targets) {
+            if (enemy.dead || enemy === this) continue;
+            if (!presetTargets) {
+                const dist = distance(this.x, this.y, enemy.x, enemy.y);
+                if (dist > healRange) continue;
+            }
+
+            const beforeHp = enemy.hp;
+            enemy.hp = Math.min(enemy.hp + this.data.heal.amount, enemy.maxHp);
+            if (enemy.hp > beforeHp) {
+                healedCount++;
+            }
+
+            if (this.abilities.includes('cleanse') && enemy.statusEffects) {
+                enemy.statusEffects.cleanse();
+            }
+        }
+
+        if (healedCount > 0) {
+            this.healCooldown = this.data.heal.interval;
+            return true;
+        }
+
+        return false;
+    }
+
+    applyBarrier(game, presetTargets = null) {
+        if (!this.data.barrier || !this.data.barrier.range || !this.data.barrier.amount) {
+            return false;
+        }
+
+        const barrierRange = this.data.barrier.range * game.grid.tileSize;
+        let allies = [];
+
+        if (Array.isArray(presetTargets) && presetTargets.length) {
+            allies = presetTargets.map(entry => ({
+                enemy: entry.enemy || entry,
+                dist: entry.dist !== undefined && entry.dist !== null
+                    ? entry.dist
+                    : distance(this.x, this.y, entry.enemy ? entry.enemy.x : entry.x, entry.enemy ? entry.enemy.y : entry.y)
+            }));
+        } else {
+            for (const enemy of game.enemies) {
+                if (enemy.dead || enemy === this) continue;
+                const dist = distance(this.x, this.y, enemy.x, enemy.y);
+                if (dist <= barrierRange) {
+                    allies.push({ enemy, dist });
+                }
+            }
+        }
+
+        if (allies.length === 0) {
+            return false;
+        }
+
+        allies.sort((a, b) => a.dist - b.dist);
+        const maxTargets = this.data.barrier.targets || 3;
+        const limit = Math.min(maxTargets, allies.length);
+
+        for (let i = 0; i < limit; i++) {
+            const ally = allies[i].enemy;
+            if (!ally || ally.dead) continue;
+            ally.barrier = (ally.barrier || 0) + this.data.barrier.amount;
         }
 
         this.barrierCooldown = this.data.barrier.interval;
+        return true;
     }
 
     attemptDisarm(deltaTime, game) {
         // 近くの罠を検知
         if (!this.disarmingTrap) {
+            if (this.currentIntent !== 'pressure_traps') {
+                return;
+            }
             let mostDangerous = null;
             let highestDanger = 0;
 
@@ -1193,7 +1919,9 @@ class Enemy {
             demon_lord: '#8b0000',
             shadow_walker: '#191970',
             war_priest: '#daa520',
-            artillery: '#ff6347'
+            artillery: '#ff6347',
+            wyvern: '#8a2be2',
+            griffin: '#dda0dd'
         };
         return colors[this.id] || '#718096';
     }
@@ -1220,8 +1948,11 @@ class Enemy {
             demon_lord: '😈',
             shadow_walker: '👤',
             war_priest: '☨',
-            artillery: '💣'
+            artillery: '💣',
+            wyvern: '🐲',
+            griffin: '🦁'
         };
         return icons[this.id] || '👤';
     }
 }
+
