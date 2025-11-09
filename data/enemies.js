@@ -524,7 +524,7 @@ const ENEMY_DATA = {
     },
     demon_lord: {
         id: "demon_lord",
-        name: "魔王",
+        name: "使徒",
         hp: 1800,
         maxHp: 1800,
         speed: 1.1,

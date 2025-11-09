@@ -1098,6 +1098,16 @@ body {
     border-color: var(--color-warning);
 }
 
+.monster-action-btn.max-invest-btn {
+    border-color: var(--color-gold);
+    background: linear-gradient(135deg, rgba(255, 215, 0, 0.2) 0%, rgba(255, 215, 0, 0.1) 100%);
+}
+
+.monster-action-btn.max-invest-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, rgba(255, 215, 0, 0.3) 0%, rgba(255, 215, 0, 0.2) 100%);
+    border-color: var(--color-gold);
+}
+
 .monster-action-btn.cancel-btn {
     border-color: var(--border-primary);
     background: transparent;

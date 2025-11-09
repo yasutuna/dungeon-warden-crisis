@@ -818,7 +818,7 @@ class UIManager {
 
         // XSS対策: innerHTMLの代わりにcreateElementとtextContentを使用
         const h2 = document.createElement('h2');
-        h2.textContent = '🎮 Dungeon Wardenへようこそ！';
+        h2.textContent = '🎮 Dungeon Warden: Crisisへようこそ！';
 
         const p1 = document.createElement('p');
         p1.textContent = '🏰 あなたはダンジョンの主となり、侵入者から魔法のコアを守ります。';
@@ -1124,9 +1124,9 @@ class UIManager {
          '',
          '【第2ステージ：Wave16-30】',
          'Wave16以降: 2つのスポーン地点から敵が出現',
-         'Wave20: 第2ボス「魔王」出現',
-         'Wave25: 第3ボス「光の勇者×2 + 魔王」出現',
-         'Wave30: 第4ボス「光の勇者×3 + 魔王×2」出現',
+         'Wave20: 第2ボス「使徒」出現',
+         'Wave25: 第3ボス「光の勇者×2 + 使徒」出現',
+         'Wave30: 第4ボス「光の勇者×3 + 使徒×2」出現',
          'Wave30以降: 3つのスポーン地点から敵が出現',
          '',
          '※ Wave15までに全ての罠とモンスターが解禁されます',
@@ -1549,6 +1549,14 @@ class UIManager {
         const actions = document.createElement('div');
         actions.className = 'soul-invest-actions';
 
+        const maxBtn = document.createElement('button');
+        maxBtn.className = 'monster-action-btn max-invest-btn';
+        maxBtn.textContent = '全ソウル投入';
+        maxBtn.addEventListener('click', () => {
+            input.value = currentSoul;
+            updatePreview();
+        });
+
         const confirmBtn = document.createElement('button');
         confirmBtn.className = 'monster-action-btn level-up-btn';
         confirmBtn.textContent = 'ソウルを投入';
@@ -1566,6 +1574,7 @@ class UIManager {
         cancelBtn.textContent = 'キャンセル';
         cancelBtn.addEventListener('click', () => overlay.remove());
 
+        actions.appendChild(maxBtn);
         actions.appendChild(confirmBtn);
         actions.appendChild(cancelBtn);
 

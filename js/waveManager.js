@@ -39,11 +39,14 @@ class WaveManager {
         // 既存の罠とモンスターを保存
         const existingTraps = [...this.game.traps];
         const existingMonsters = [...this.game.monsters];
+        const previousGrid = this.game.grid;
 
         // グリッドを再生成（初期グリッドと同じスケールを使用）
-        const cols = (typeof GRID_CONSTANTS !== 'undefined' && GRID_CONSTANTS.COLS) || this.game.grid?.cols || 16;
-        const rows = (typeof GRID_CONSTANTS !== 'undefined' && GRID_CONSTANTS.ROWS) || this.game.grid?.rows || 12;
-        const tileSize = (typeof GRID_CONSTANTS !== 'undefined' && GRID_CONSTANTS.TILE_SIZE) || this.game.grid?.tileSize || 50;
+        const cols = (typeof GRID_CONSTANTS !== 'undefined' && GRID_CONSTANTS.COLS) || previousGrid?.cols || 16;
+        const rows = (typeof GRID_CONSTANTS !== 'undefined' && GRID_CONSTANTS.ROWS) || previousGrid?.rows || 12;
+        const tileSize = (typeof GRID_CONSTANTS !== 'undefined' && GRID_CONSTANTS.TILE_SIZE) || previousGrid?.tileSize || 50;
+        const previousCols = previousGrid?.cols || cols;
+        const previousRows = previousGrid?.rows || rows;
         this.game.grid = new Grid(cols, rows, tileSize);
         this.game.grid.setupDefaultPath(this.currentWave);
 
@@ -63,11 +66,80 @@ class WaveManager {
 
         // 保存したモンスターを再配置（配置可能な場合のみ）
         this.game.monsters = [];
-        for (const monster of existingMonsters) {
-            if (!monster.dead && this.game.grid.canPlaceMonster(monster.gridX, monster.gridY, monster.flying)) {
-                if (this.game.grid.placeMonster(monster.gridX, monster.gridY, monster)) {
-                    this.game.monsters.push(monster);
+
+        const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+        const projectCoordinate = (value, oldSize, newSize) => {
+            if (typeof value !== 'number' || newSize <= 0) {
+                return 0;
+            }
+            if (!oldSize || oldSize <= 1) {
+                return clamp(Math.round(value) || 0, 0, Math.max(0, newSize - 1));
+            }
+            const ratio = clamp(value, 0, oldSize - 1) / (oldSize - 1);
+            return clamp(Math.round(ratio * (newSize - 1)), 0, Math.max(0, newSize - 1));
+        };
+
+        // �V�����}�b�v�ő����X�^�[��̉ڑ�
+        const findRelocationTile = (startX, startY, flying) => {
+            if (this.game.grid.cols === 0 || this.game.grid.rows === 0) {
+                return null;
+            }
+
+            const directions = [
+                { x: 1, y: 0 },
+                { x: -1, y: 0 },
+                { x: 0, y: 1 },
+                { x: 0, y: -1 }
+            ];
+
+            const targetX = clamp(Math.round(startX), 0, this.game.grid.cols - 1);
+            const targetY = clamp(Math.round(startY), 0, this.game.grid.rows - 1);
+            const visited = new Set();
+            const queue = [{ x: targetX, y: targetY }];
+            visited.add(`${targetX},${targetY}`);
+
+            while (queue.length > 0) {
+                const current = queue.shift();
+                if (this.game.grid.canPlaceMonster(current.x, current.y, flying)) {
+                    return current;
                 }
+
+                for (const dir of directions) {
+                    const nx = current.x + dir.x;
+                    const ny = current.y + dir.y;
+                    if (nx < 0 || ny < 0 || nx >= this.game.grid.cols || ny >= this.game.grid.rows) {
+                        continue;
+                    }
+                    const key = `${nx},${ny}`;
+                    if (visited.has(key)) {
+                        continue;
+                    }
+                    visited.add(key);
+                    queue.push({ x: nx, y: ny });
+                }
+            }
+
+            // �p�X�}�X��S�Ẵ^�C�����C���ł̉��L�X�^�[��T��
+            for (const tile of this.game.grid.pathTiles || []) {
+                if (this.game.grid.canPlaceMonster(tile.x, tile.y, flying)) {
+                    return { x: tile.x, y: tile.y };
+                }
+            }
+
+            return null;
+        };
+
+        for (const monster of existingMonsters) {
+            if (monster.dead) continue;
+
+            const projectedX = projectCoordinate(monster.gridX ?? 0, previousCols, this.game.grid.cols);
+            const projectedY = projectCoordinate(monster.gridY ?? 0, previousRows, this.game.grid.rows);
+            const relocationTile = findRelocationTile(projectedX, projectedY, monster.flying);
+
+            if (relocationTile && this.game.grid.placeMonster(relocationTile.x, relocationTile.y, monster)) {
+                this.game.monsters.push(monster);
+            } else {
+                console.warn('�����X�^�[�����V�����}�b�v�̋󔒂œ��L�ł��܂���ł���', monster);
             }
         }
 
@@ -427,7 +499,7 @@ class WaveManager {
                 interval: 5
             });
 
-            // Wave40以降は魔王も追加
+            // Wave40以降は使徒も追加
             if (waveNumber >= 40) {
                 enemies.push({
                     type: 'demon_lord',
