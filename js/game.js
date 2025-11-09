@@ -16,9 +16,6 @@ class Game {
 
         // リソース
         this.soul = GAME_CONSTANTS.INITIAL_SOUL;
-        this.mana = GAME_CONSTANTS.INITIAL_MANA;
-        this.maxMana = GAME_CONSTANTS.MAX_MANA;
-        this.material = 0;
         this.coreHp = GAME_CONSTANTS.INITIAL_CORE_HP;
         this.maxCoreHp = GAME_CONSTANTS.INITIAL_CORE_HP;
 
@@ -26,9 +23,6 @@ class Game {
         this.totalScore = 0; // 累積スコア
         this.highestEnemyLevel = 0; // 倒した敵の最高レベル
         this.totalEnemiesDefeated = 0; // 倒した敵の総数
-
-        // マナ回復
-        this.manaRegenRate = GAME_CONSTANTS.MANA_REGEN_RATE; // 毎秒+2
 
         // グリッド
         this.grid = new Grid(GRID_CONSTANTS.COLS, GRID_CONSTANTS.ROWS, GRID_CONSTANTS.TILE_SIZE);
@@ -615,19 +609,6 @@ class Game {
             this.draggedMonster.y = this.mouseY - this.dragOffsetY;
         }
 
-        // マナ回復
-        let totalManaRegen = this.manaRegenRate;
-
-        // マナ結晶のボーナス
-        for (const trap of this.traps) {
-            if (trap.destroyed || !trap.data.effect) continue;
-            if (trap.data.effect.type === 'mana_generation') {
-                totalManaRegen += trap.data.effect.manaPerSec;
-            }
-        }
-
-        this.mana = Math.min(this.mana + totalManaRegen * dt, this.maxMana);
-
         // Quadtree更新最適化: ダーティフラグがtrueの時のみ再構築
         if (this.quadtreeDirty) {
             this.rebuildQuadtree();
@@ -708,7 +689,6 @@ class Game {
                 }
 
                 this.soul += soulReward;
-                this.mana = Math.min(this.mana + enemy.manaReward, this.maxMana);
                 enemy.rewarded = true;
 
                 // スコアとレベル記録

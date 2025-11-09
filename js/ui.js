@@ -11,9 +11,6 @@ class UIManager {
 
         // UI更新最適化: 前回の値を保持
         this.lastCoreHp = -1;
-        this.lastMana = -1;
-        this.lastMaxMana = -1;
-        this.lastMaterial = -1;
         this.lastWave = -1;
         this.lastWaveInProgress = null;
         this.lastGameSpeed = -1;
@@ -26,8 +23,6 @@ class UIManager {
         // DOM要素のキャッシュ（パフォーマンス最適化）
         this.elements = {
             soulDisplay: document.getElementById('soul-display'),
-            manaDisplay: document.getElementById('mana-display'),
-            materialDisplay: document.getElementById('material-display'),
             coreHp: document.getElementById('core-hp'),
             waveDisplay: document.getElementById('wave-display'),
             scoreDisplay: document.getElementById('score-display'),
@@ -271,20 +266,6 @@ class UIManager {
             this.lastSoul = soul;
         }
 
-        const mana = Math.floor(this.game.mana);
-        const maxMana = this.game.maxMana;
-        if (mana !== this.lastMana || maxMana !== this.lastMaxMana) {
-            this.elements.manaDisplay.textContent = `${mana}/${maxMana}`;
-            this.lastMana = mana;
-            this.lastMaxMana = maxMana;
-        }
-
-        const material = Math.floor(this.game.material);
-        if (material !== this.lastMaterial) {
-            this.elements.materialDisplay.textContent = material;
-            this.lastMaterial = material;
-        }
-
         const coreHp = Math.floor(this.game.coreHp);
         if (coreHp !== this.lastCoreHp) {
             this.elements.coreHp.textContent = coreHp;
@@ -454,7 +435,7 @@ class UIManager {
             // アクティブスキル
             if (object.data.active) {
                 const activeP = document.createElement('p');
-                activeP.textContent = `アクティブ: ${object.data.active.name} (マナ: ${object.data.active.manaCost})`;
+                activeP.textContent = `アクティブ: ${object.data.active.name}`;
                 activeP.style.color = '#4299e1';
                 infoDiv.appendChild(activeP);
 
@@ -563,7 +544,7 @@ class UIManager {
             }
 
             const rewardP = document.createElement('p');
-            rewardP.textContent = `撃破報酬: ${object.soulReward} ソウル, ${object.manaReward} マナ`;
+            rewardP.textContent = `撃破報酬: ${object.soulReward} ソウル`;
             rewardP.style.color = '#48bb78';
             infoDiv.appendChild(rewardP);
 
@@ -912,9 +893,7 @@ class UIManager {
         const h3_4 = document.createElement('h3');
         h3_4.textContent = '💰 リソース';
         const ul4 = document.createElement('ul');
-        ['ソウル (紫): 罠とモンスターの購入・修理に使用。敵を倒すと獲得',
-         'マナ (青): 自動回復、モンスターのスキルに使用。時間経過で回復',
-         '素材 (橙): 将来の拡張用（現在未使用）'].forEach(text => {
+        ['ソウル (紫): 罠とモンスターの購入・修理に使用。敵を倒すと獲得'].forEach(text => {
             const li = document.createElement('li');
             li.textContent = text;
             ul4.appendChild(li);
@@ -974,7 +953,6 @@ class UIManager {
         h3_6_5.textContent = '💰 経済系罠（後半で解禁）';
         const ul6_5 = document.createElement('ul');
         ['💀 ソウル収穫機: 範囲内で敵を倒すとソウル+3ボーナス',
-         '💎 マナ結晶: 毎秒マナ+0.5を自動生成（パッシブ）',
          '※ これらはWaveクリアで段階的に解禁されます'].forEach(text => {
             const li = document.createElement('li');
             li.textContent = text;
@@ -994,7 +972,7 @@ class UIManager {
          '🟢 スライム: 鈍足攻撃、被ダメ時20%で分裂',
          '🔧 ゴブリン工兵: 罠を自動修理。敵撃破時5%でソウル+5',
          '🦅 ガーゴイル: 飛行ユニット、対空専門',
-         '✨ ウィスプ: 魔法攻撃、マナ回復サポート'].forEach(text => {
+         '✨ ウィスプ: 魔法攻撃、サポート'].forEach(text => {
             const li = document.createElement('li');
             li.textContent = text;
             ul7.appendChild(li);
@@ -1474,7 +1452,7 @@ class UIManager {
 
         const reward = document.createElement('div');
         reward.className = 'unit-hover-stat';
-        reward.textContent = `報酬: ${enemy.soulReward} ソウル, ${enemy.manaReward} マナ`;
+        reward.textContent = `報酬: ${enemy.soulReward} ソウル`;
         reward.style.color = '#48bb78';
 
         tooltip.appendChild(header);

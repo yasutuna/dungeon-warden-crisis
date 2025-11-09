@@ -386,9 +386,8 @@ class Monster {
 
             if (dist <= game.grid.tileSize * 1.5) {
                 // 罠の近くに到達したら修理
-                if (this.activeCooldown <= 0 && game.mana >= this.data.active.manaCost) {
+                if (this.activeCooldown <= 0) {
                     damagedTrap.repair(this.data.active.effect.healAmount);
-                    game.mana -= this.data.active.manaCost;
                     this.activeCooldown = this.data.active.cooldown;
                     game.ui.showMessage(`${this.name}が罠を修理しました`, 'info');
                 }
@@ -974,7 +973,6 @@ class Monster {
                 amount: this.maxHp * active.effect.damageReduction
             });
             this.statusEffects.addEffect(buffEffect);
-            game.mana -= active.manaCost;
             this.activeCooldown = active.cooldown;
         } else if (active.effect.type === 'repair_trap') {
             // 罠修理
@@ -986,15 +984,13 @@ class Monster {
                 return dist < active.effect.range * game.grid.tileSize && trap.hp < trap.maxHp;
             });
 
-            if (nearbyTraps.length > 0 && game.mana >= active.manaCost) {
+            if (nearbyTraps.length > 0) {
                 const trap = nearbyTraps[0];
                 trap.repair(active.effect.healAmount);
-                game.mana -= active.manaCost;
                 this.activeCooldown = active.cooldown;
             }
         } else if (active.effect.type === 'heal_allies') {
             // 味方回復
-            if (game.mana >= active.manaCost) {
                 const healRange = active.effect.range * game.grid.tileSize;
                 const maxTargets = active.effect.maxTargets || 2;
                 const healAmount = active.effect.healAmount || 50;
@@ -1028,11 +1024,9 @@ class Monster {
                 }
 
                 if (healedCount > 0) {
-                    game.mana -= active.manaCost;
                     this.activeCooldown = active.cooldown;
                     game.ui.showMessage(`${this.name}が味方を回復しました`, 'success');
                 }
-            }
         }
     }
 
