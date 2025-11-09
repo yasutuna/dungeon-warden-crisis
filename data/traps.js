@@ -49,6 +49,7 @@ const TRAP_DATA = {
             fire_vent: "flame_arrow_wall",
             ice_floor: "frost_arrow_wall",
             poison_cloud: "poison_arrow_wall",
+            venom_blossom: "poison_arrow_wall",
             lightning_rod: "lightning_arrow_wall",
             cursed_altar: "curse_arrow_wall"
         }
@@ -320,6 +321,35 @@ const TRAP_DATA = {
         description: "毒DOT+回復50%減少"
     },
 
+    venom_blossom: {
+        id: "venom_blossom",
+        name: "ベノムブロッサム",
+        cost: 110,
+        repairCost: 35,
+        hp: 70,
+        maxHp: 70,
+        cooldownSec: 7,
+        range: 1.8,
+        effect: {
+            type: "poison",
+            dot: {
+                dps: 9,
+                duration: 4,
+                tag: "poison",
+                maxStacks: 4
+            },
+            healingReduction: 0.4
+        },
+        targeting: "area",
+        synergyTags: ["poison", "dot", "debuff"],
+        unlocked: true,
+        description: "毒蓄積ダメージとHP回復阻害を付与",
+        evolution: {
+            arrow_wall: "poison_arrow_wall",
+            slow_zone: "toxic_swamp"
+        }
+    },
+
     mirror_trap: {
         id: "mirror_trap",
         name: "反射の鏡",
@@ -527,7 +557,10 @@ const TRAP_DATA = {
         targeting: "on_pass",
         synergyTags: ["cc", "slow"],
         unlocked: true,
-        description: "通過時に移動速度50%減少"
+        description: "通過時に移動速度50%減少",
+        evolution: {
+            venom_blossom: "toxic_swamp"
+        }
     },
 
     electric_net: {
@@ -856,6 +889,39 @@ const TRAP_DATA = {
         synergyTags: ["physical", "curse", "projectile"],
         unlocked: false,
         description: "矢+呪い。物理ダメージ+呪いDOT+被ダメ増加",
+        maxExp: 150,
+        expPerLevel: 75,
+        evolved: true
+    },
+    // ===== ベノムブロッサムの進化系 =====
+    toxic_swamp: {
+        id: "toxic_swamp",
+        name: "毒沼",
+        cost: 200,
+        repairCost: 50,
+        hp: 100,
+        maxHp: 100,
+        cooldownSec: 0,
+        range: 0,
+        effect: {
+            type: "toxic_swamp",
+            dot: {
+                dps: 12,
+                duration: 20,
+                tag: "poison",
+                maxStacks: 5
+            },
+            root: {
+                duration: 20,
+                breakOnDamage: false
+            },
+            healingReduction: 0.6,
+            slow: 1.0
+        },
+        targeting: "on_pass",
+        synergyTags: ["poison", "dot", "cc", "debuff"],
+        unlocked: false,
+        description: "毒沼+減速。20秒間移動不可+強力な毒DOT",
         maxExp: 150,
         expPerLevel: 75,
         evolved: true

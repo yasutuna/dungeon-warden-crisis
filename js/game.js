@@ -197,15 +197,12 @@ class Game {
         const hoverRadius = this.grid.tileSize * 0.6;
         let hoveredUnit = null;
 
-        console.log(`updateHoveredUnit: mouseX=${this.mouseX}, mouseY=${this.mouseY}`);
-
         // モンスターをチェック
         for (const monster of this.monsters) {
             if (monster.dead) continue;
             const dist = distance(this.mouseX, this.mouseY, monster.x, monster.y);
             if (dist <= hoverRadius) {
                 hoveredUnit = monster;
-                console.log('Hovered monster:', monster);
                 break;
             }
         }
@@ -218,7 +215,6 @@ class Game {
                 const enemyRadius = enemy.boss ? hoverRadius * 1.5 : hoverRadius;
                 if (dist <= enemyRadius) {
                     hoveredUnit = enemy;
-                    console.log('Hovered enemy:', enemy);
                     break;
                 }
             }
@@ -228,14 +224,10 @@ class Game {
         if (!hoveredUnit) {
             const gridPos = this.grid.worldToGrid(this.mouseX, this.mouseY);
             const tile = this.grid.getTile(gridPos.x, gridPos.y);
-            console.log('Checking trap at grid:', gridPos, 'tile:', tile);
             if (tile && tile.trap && !tile.trap.destroyed) {
                 hoveredUnit = tile.trap;
-                console.log('Hovered trap:', tile.trap);
             }
         }
-
-        console.log('Final hoveredUnit:', hoveredUnit);
 
         // ホバー対象が変わった場合、UIを更新
         if (hoveredUnit !== this.hoveredUnit) {
@@ -254,11 +246,8 @@ class Game {
 
     handleClick(x, y) {
         const gridPos = this.grid.worldToGrid(x, y);
-        console.log(`handleClick: x=${x}, y=${y}, gridPos=(${gridPos.x}, ${gridPos.y})`);
-        console.log(`placementMode: ${this.placementMode}, selectedTrap: ${this.ui.selectedTrap}, selectedMonster: ${this.ui.selectedMonster}`);
 
         if (this.placementMode === 'trap' && this.ui.selectedTrap) {
-            console.log(`Calling placeTrap for ${this.ui.selectedTrap}`);
             this.placeTrap(gridPos.x, gridPos.y, this.ui.selectedTrap);
         } else if (this.placementMode === 'monster' && this.ui.selectedMonster) {
             this.placeMonster(gridPos.x, gridPos.y, this.ui.selectedMonster);
@@ -275,62 +264,43 @@ class Game {
      * @param {string} trapId - 罠のID
      */
     placeTrap(gx, gy, trapId) {
-        console.log(`=== placeTrap START ===`);
-        console.log(`trapId: ${trapId}, gx: ${gx}, gy: ${gy}`);
-
         const trapData = TRAP_DATA[trapId];
-        console.log(`trapData:`, trapData);
-
         const tile = this.grid.getTile(gx, gy);
-        console.log(`tile:`, tile);
 
         if (!tile) {
-            console.log('No tile found - returning');
             this.ui.showMessage('無効な位置です', 'error');
             return;
         }
 
-        console.log(`tile.trap:`, tile.trap);
-
         // 既存の罠がある場合（HP > 0の場合のみ上書き処理）
         if (tile.trap && tile.trap.hp > 0) {
-            console.log('Existing trap with HP > 0 - calling overwriteTrap');
             this.overwriteTrap(gx, gy, trapId);
             return;
         }
 
         // ソウルチェック
-        console.log(`Soul check: ${this.soul} >= ${trapData.cost}?`);
         if (this.soul < trapData.cost) {
-            console.log('Not enough soul - returning');
             this.ui.showMessage('ソウルが足りません', 'error');
             return;
         }
 
         // 配置可能かチェック（破壊された罠がある場合は上書き可能）
         const canPlace = this.grid.canPlaceTrap(gx, gy, false);
-        console.log(`canPlaceTrap result: ${canPlace}`);
 
         if (!canPlace) {
-            console.log('Cannot place trap - returning');
             this.ui.showMessage('ここには配置できません', 'error');
             return;
         }
 
         // 既存の破壊された罠を削除
         if (tile.trap && tile.trap.hp <= 0) {
-            console.log('Removing destroyed trap');
             this.traps = this.traps.filter(t => t !== tile.trap);
             tile.trap = null;
         }
 
         // 罠を配置
-        console.log('Creating new trap...');
         const trap = new Trap(trapData, gx, gy);
-        console.log('Trap created:', trap);
-
         const placeResult = this.grid.placeTrap(gx, gy, trap);
-        console.log(`grid.placeTrap result: ${placeResult}`);
 
         if (placeResult) {
             this.traps.push(trap);
@@ -345,7 +315,6 @@ class Game {
             // Quadtreeを無効化
             this.quadtreeDirty = true;
 
-            console.log(`Trap placed successfully! New soul: ${this.soul}`);
             this.ui.showMessage(`${trapData.name}を配置しました`, 'success');
 
             // 配置モードをリセット
@@ -355,11 +324,8 @@ class Game {
                 item.classList.remove('selected');
             });
         } else {
-            console.log('Failed to place trap');
             this.ui.showMessage('罠の配置に失敗しました', 'error');
         }
-
-        console.log(`=== placeTrap END ===`);
     }
 
     /**
@@ -714,6 +680,14 @@ class Game {
             if (trap.destroyed && trap.hp <= 0) {
                 const tile = this.grid.getTile(trap.gridX, trap.gridY);
                 if (tile) tile.trap = null;
+
+                // 罠破壊通知を追加（破壊時に1回だけ）
+                if (!trap.destructionNotified) {
+                    this.ui.showMessage(`${trap.name} Lv.${trap.level}が破壊されました！`, 'warning');
+                    this.ui.addLog(`${trap.name} Lv.${trap.level}が破壊されました`, 'warning');
+                    trap.destructionNotified = true;
+                }
+
                 return false;
             }
             return true;
@@ -950,15 +924,13 @@ class Game {
             const oldSkillCount = monster.learnedSkills.length;
             monster.gainExp(sharedExp);
 
-            // レベルアップした場合
+            // レベルアップした場合（ログのみ、通知は表示しない）
             if (monster.level > oldLevel) {
-                this.ui.showMessage(`${monster.name}がLv.${monster.level}にレベルアップ！`, 'success');
                 this.ui.addLog(`${monster.name}がLv.${monster.level}にレベルアップしました！`, 'success');
 
-                // スキル習得通知
+                // スキル習得通知（ログのみ）
                 if (monster.learnedSkills.length > oldSkillCount) {
                     const newSkill = monster.learnedSkills[monster.learnedSkills.length - 1];
-                    this.ui.showMessage(`${monster.name}が「${newSkill.name}」を習得！`, 'info');
                     this.ui.addLog(`${monster.name}がスキル「${newSkill.name}」を習得しました！`, 'info');
                 }
             }
@@ -989,7 +961,7 @@ class Game {
         if (this.grid.placeMonster(spawnTile.x, spawnTile.y, newSlime)) {
             this.monsters.push(newSlime);
             this.quadtreeDirty = true;
-            this.ui.showMessage(`スライム Lv.${newLevel}が分裂しました！`, 'info');
+            // 分裂通知はログのみ（通知は表示しない）
             this.ui.addLog(`スライム Lv.${newLevel}が分裂し新たなスライムが誕生しました！`, 'info');
         }
     }
@@ -1047,6 +1019,10 @@ class Game {
         if (tile && tile.monster === monster) {
             tile.monster = null;
         }
+
+        // 自ユニット死亡通知を追加
+        this.ui.showMessage(`${monster.name} Lv.${monster.level}が倒されました！`, 'warning');
+        this.ui.addLog(`${monster.name} Lv.${monster.level}が倒されました`, 'warning');
 
         const bonusExp = Math.floor(monster.exp * 0.1);
         if (bonusExp <= 0) {
@@ -1177,6 +1153,15 @@ class Game {
         // 新しい位置に移動
         const newTile = this.grid.getTile(gx, gy);
         if (newTile) {
+            // 落とし穴チェック: 空戦ユニット以外が落とし穴に移動したら即死
+            if (newTile.type === 'pit' && !monster.flying) {
+                this.ui.showMessage(`${monster.name}が落とし穴に落ちて即死しました！`, 'warning');
+                monster.hp = 0;
+                monster.dead = true;
+                // タイルには登録しない
+                return;
+            }
+
             newTile.monster = monster;
             const worldPos = this.grid.gridToWorld(gx, gy);
             monster.x = worldPos.x;

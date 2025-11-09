@@ -688,7 +688,11 @@ class UIManager {
             ice_floor: '❄️',
             push_plate: '👊',
             mine: '💣',
-            confusion_sign: '🌀'
+            confusion_sign: '🌀',
+            venom_blossom: '☠️',
+            toxic_swamp: '🧪',
+            poison_arrow_wall: '🏹',
+            poison_cloud: '☁️'
         };
         return icons[trapId] || '🔧';
     }

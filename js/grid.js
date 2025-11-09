@@ -397,40 +397,29 @@ S#####X#E#E##.......
     }
 
     canPlaceTrap(x, y, allowOverwrite = false) {
-        console.log(`canPlaceTrap: x=${x}, y=${y}, allowOverwrite=${allowOverwrite}`);
         const tile = this.getTile(x, y);
 
         if (!tile) {
-            console.log('canPlaceTrap: No tile - returning false');
             return false;
         }
-
-        console.log(`canPlaceTrap: tile.type=${tile.type}`);
 
         // 配置可能なタイルタイプか
         if (tile.type !== 'empty' && tile.type !== 'path' && tile.type !== 'elevated') {
-            console.log('canPlaceTrap: Invalid tile type - returning false');
             return false;
         }
 
-        console.log(`canPlaceTrap: tile.trap=`, tile.trap);
-
         // 罠がない場合は配置可能
         if (!tile.trap) {
-            console.log('canPlaceTrap: No trap - returning true');
             return true;
         }
 
         // 上書き許可の場合は配置可能
         if (allowOverwrite) {
-            console.log('canPlaceTrap: Overwrite allowed - returning true');
             return true;
         }
 
         // 破壊された罠（HP0以下）は上書き可能
-        const result = tile.trap.hp <= 0;
-        console.log(`canPlaceTrap: trap.hp=${tile.trap.hp}, result=${result}`);
-        return result;
+        return tile.trap.hp <= 0;
     }
 
     canPlaceMonster(x, y, flying = false) {
@@ -452,28 +441,21 @@ S#####X#E#E##.......
     }
 
     placeTrap(x, y, trap) {
-        console.log(`grid.placeTrap: x=${x}, y=${y}`);
         const tile = this.getTile(x, y);
 
         if (!tile) {
-            console.log('grid.placeTrap: No tile - returning false');
             return false;
         }
 
-        console.log(`grid.placeTrap: tile.type=${tile.type}`);
-
         // タイルタイプチェック（配置可能なタイプか）
         if (tile.type !== 'empty' && tile.type !== 'path' && tile.type !== 'elevated') {
-            console.log('grid.placeTrap: Invalid tile type - returning false');
             return false;
         }
 
         // 罠を配置（game.jsで既に上書きチェック済み）
-        console.log('grid.placeTrap: Placing trap');
         tile.trap = trap;
         trap.gridX = x;
         trap.gridY = y;
-        console.log('grid.placeTrap: Success - returning true');
         return true;
     }
 

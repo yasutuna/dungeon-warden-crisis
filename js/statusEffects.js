@@ -23,6 +23,33 @@ class StatusEffect {
                 target.takeDamage((this.data.dps || 5) * deltaTime, 'bleed');
                 break;
             }
+            case 'poison': {
+                const baseDps = (this.data.dps ?? STATUS_EFFECT_CONSTANTS?.POISON_BASE_DPS ?? 6);
+                const totalDps = baseDps * (this.stacks || 1);
+                let poisonDamage = totalDps * deltaTime;
+
+                if (target.statusEffects && (target.statusEffects.hasEffect('burn') || target.statusEffects.hasEffect('wildfire'))) {
+                    const synergy = this.data.burnSynergyBonus ?? STATUS_EFFECT_CONSTANTS?.POISON_BURN_SYNERGY ?? 0.25;
+                    poisonDamage *= (1 + synergy);
+                }
+
+                target.takeDamage(poisonDamage, 'poison');
+
+                const healingReduction = this.data.healingReduction ?? STATUS_EFFECT_CONSTANTS?.POISON_HEALING_REDUCTION ?? 0;
+                if (healingReduction > 0) {
+                    const totalReduction = Math.min(0.95, healingReduction * (this.stacks || 1));
+                    const multiplier = Math.max(0, 1 - totalReduction);
+                    if (typeof target.applyHealingDebuff === 'function') {
+                        target.applyHealingDebuff(multiplier);
+                    } else {
+                        if (typeof target.healingReceivedMultiplier !== 'number') {
+                            target.healingReceivedMultiplier = 1.0;
+                        }
+                        target.healingReceivedMultiplier = Math.min(target.healingReceivedMultiplier, multiplier);
+                    }
+                }
+                break;
+            }
 
             case 'burn': {
                 let burnDamage = (this.data.dps || 12) * deltaTime;
@@ -40,6 +67,14 @@ class StatusEffect {
             case 'slow': {
                 const slowAmount = this.data.amount || 0.4;
                 target.moveSpeed *= (1 - slowAmount);
+                break;
+            }
+
+            case 'rooted': {
+                // ルート: 移動不可
+                const slowAmount = this.data.slow || 1.0;
+                target.moveSpeed *= (1 - slowAmount);
+                target.rooted = true;
                 break;
             }
 
@@ -201,6 +236,19 @@ class StatusEffectManager {
                 existingEffect.stacks++;
                 existingEffect.data.dps += effect.data.dps;
                 existingEffect.remainingTime = Math.max(existingEffect.remainingTime, effect.remainingTime);
+            } else if (effect.type === 'poison') {
+                const maxStacks = effect.data?.maxStacks ?? STATUS_EFFECT_CONSTANTS?.POISON_MAX_STACKS ?? 5;
+                if (existingEffect.stacks < maxStacks) {
+                    existingEffect.stacks++;
+                    if (!existingEffect.data) existingEffect.data = {};
+                    const newDps = effect.data?.dps ?? 0;
+                    existingEffect.data.dps = (existingEffect.data.dps ?? 0) + newDps;
+                    const newReduction = effect.data?.healingReduction ?? 0;
+                    if (newReduction > 0) {
+                        existingEffect.data.healingReduction = Math.max(existingEffect.data.healingReduction ?? 0, newReduction);
+                    }
+                }
+                existingEffect.remainingTime = Math.max(existingEffect.remainingTime, effect.remainingTime);
             } else {
                 existingEffect.remainingTime = effect.duration;
                 if (effect.type === 'shield') {
@@ -228,6 +276,7 @@ class StatusEffectManager {
         this.entity.stunned = false;
         this.entity.confused = false;
         this.entity.fireVulnerability = 1.0;
+        this.entity.healingReceivedMultiplier = 1.0;
 
         this.effects = this.effects.filter(effect => {
             effect.apply(this.entity, deltaTime, game);
@@ -249,7 +298,7 @@ class StatusEffectManager {
     }
 
     cleanse() {
-        const debuffs = ['bleed', 'burn', 'freeze', 'slow', 'stun', 'oiled', 'confused', 'wildfire'];
+        const debuffs = ['bleed', 'burn', 'freeze', 'slow', 'stun', 'oiled', 'confused', 'wildfire', 'poison'];
         this.effects = this.effects.filter(effect => {
             const isDebuff = debuffs.includes(effect.type);
             if (isDebuff) {

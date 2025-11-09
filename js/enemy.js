@@ -195,6 +195,7 @@ class Enemy {
         // 脆弱性フラグ
         this.vulnerableToShatter = false;
         this.fireVulnerability = 1.0;
+        this.healingReceivedMultiplier = 1.0;
 
         // バリア
         this.barrier = 0;
@@ -545,7 +546,7 @@ class Enemy {
         const regeneration = this.skillMap.get('enemy_regeneration');
         if (regeneration) {
             const healAmount = this.maxHp * regeneration.effect.value * deltaTime;
-            this.hp = Math.min(this.hp + healAmount, this.maxHp);
+            this.receiveHealing(healAmount, this);
         }
 
         // バーサーカースキル（低HP時のバフ）
@@ -584,30 +585,30 @@ class Enemy {
             }
         }
 
-        // �߂��̃����X�^�[��T��
+        // 近くのモンスターを探索
         const nearbyMonster = this.findNearbyMonster(game);
 
         if (nearbyMonster) {
-            // �U���͈͓����`�F�b�N
+            // 攻撃範囲内かチェック
             const dist = distance(this.x, this.y, nearbyMonster.x, nearbyMonster.y);
             const attackRange = this.data.attack
                 ? this.data.attack.range * game.grid.tileSize
                 : game.grid.tileSize * 0.8;
 
             if (dist <= attackRange) {
-                // �˒���: �퓬���[�h�i�ړ���~�j
+                // 射程内: 戦闘モード(移動停止)
                 this.clearStepTarget();
                 this.combatMonster(nearbyMonster, deltaTime, game);
                 return;
             } else {
-                // �˒��O: �����X�^�[�Ɍ������Ĉړ�
+                // 射程外: モンスターに向かって移動
                 this.clearStepTarget();
                 this.moveTowardsMonster(nearbyMonster, deltaTime, game);
                 return;
             }
         }
 
-        // AI�s���p�^�[����K�p
+        // AI行動パターンを適用
         this.applyAIBehavior(game);
 
         this.ensureStepTarget(game);
@@ -847,20 +848,15 @@ class Enemy {
             const newTile = game.grid.getTile(gridPos.x, gridPos.y);
             this.gridX = gridPos.x;
             this.gridY = gridPos.y;
-
             // 落とし穴チェック: 空戦ユニット以外が落とし穴に入ったら即死
-            // ドラッグアンドドロップ中は落とし穴の効果を発動しない
+            // 敵ユニットは常に落とし穴の効果を受ける（自ユニットのドラッグは無関係）
             if (newTile && newTile.type === 'pit' && !this.flying) {
-                if (!game.isDragging) {
-                    console.log(`[落とし穴] ${this.name}が落とし穴に落ちました (isDragging: ${game.isDragging})`);
-                    this.hp = 0;
-                    this.dead = true;
-                    game.ui.showMessage(`${this.name}が落とし穴に落ちて即死しました！`, 'success');
-                    // タイルに登録せずに終了
-                    return;
-                } else {
-                    console.log(`[落とし穴スキップ] ${this.name}がドラッグ中のため落とし穴をスキップ (isDragging: ${game.isDragging})`);
-                }
+                console.log(`[落とし穴] ${this.name}が落とし穴に落ちました`);
+                this.hp = 0;
+                this.dead = true;
+                game.ui.showMessage(`${this.name}が落とし穴に落ちて即死しました！`, 'success');
+                // タイルに登録せずに終了
+                return;
             }
 
             // 新しいタイルに他の敵がいない場合のみ登録
@@ -1072,7 +1068,7 @@ class Enemy {
         // 吸血スキル
         if (this.lifeStealRate > 0 && actualDamage > 0) {
             const healAmount = Math.floor(actualDamage * this.lifeStealRate);
-            this.hp = Math.min(this.hp + healAmount, this.maxHp);
+            this.receiveHealing(healAmount, this);
         }
 
         // ダメージエフェクト
@@ -1206,7 +1202,7 @@ class Enemy {
         if (this.holyZoneEffect) {
             this.holyZoneEffect.duration -= deltaTime;
             if (this.holyZoneEffect.duration > 0) {
-                this.hp = Math.min(this.hp + this.holyZoneEffect.healPerSec * deltaTime, this.maxHp);
+                this.receiveHealing(this.holyZoneEffect.healPerSec * deltaTime, this);
             } else {
                 this.holyZoneEffect = null;
             }
@@ -1629,9 +1625,8 @@ class Enemy {
                 if (dist > healRange) continue;
             }
 
-            const beforeHp = enemy.hp;
-            enemy.hp = Math.min(enemy.hp + this.data.heal.amount, enemy.maxHp);
-            if (enemy.hp > beforeHp) {
+            const actualHeal = enemy.receiveHealing(this.data.heal.amount, this);
+            if (actualHeal > 0) {
                 healedCount++;
             }
 
@@ -1757,7 +1752,7 @@ class Enemy {
             return;
         }
 
-        this.hp = Math.min(this.hp + this.data.selfHeal.amount, this.maxHp);
+        this.receiveHealing(this.data.selfHeal.amount, this);
         this.selfHealCooldown = this.data.selfHeal.interval;
     }
 
@@ -1843,6 +1838,29 @@ class Enemy {
         }
 
         return finalDamage;
+    }
+
+
+    receiveHealing(amount, source = null) {
+        if (this.dead || !isFinite(amount) || amount <= 0) {
+            return 0;
+        }
+        if (typeof this.healingReceivedMultiplier !== 'number') {
+            this.healingReceivedMultiplier = 1.0;
+        }
+        const multiplier = Math.max(0, Math.min(1, this.healingReceivedMultiplier));
+        const actual = amount * multiplier;
+        const before = this.hp;
+        this.hp = Math.min(this.hp + actual, this.maxHp);
+        return this.hp - before;
+    }
+
+    applyHealingDebuff(multiplier) {
+        if (typeof multiplier !== 'number') return;
+        if (typeof this.healingReceivedMultiplier !== 'number') {
+            this.healingReceivedMultiplier = 1.0;
+        }
+        this.healingReceivedMultiplier = Math.min(this.healingReceivedMultiplier, multiplier);
     }
 
     triggerDeathExplosion(effect, game) {

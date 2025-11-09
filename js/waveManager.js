@@ -229,7 +229,6 @@ class WaveManager {
         // ステップ2: Sマスに空きがあれば必ずそこを使う（最優先）
         if (spawnTiles.length > 0) {
             const chosenTile = spawnTiles[Math.floor(Math.random() * spawnTiles.length)];
-            console.log(`敵出現: Sマス (${chosenTile.x}, ${chosenTile.y}) に出現`);
             return chosenTile;
         }
 
@@ -278,7 +277,6 @@ class WaveManager {
         const closestTiles = pathTiles.filter(t => t.distFromSpawn === minDist);
         const chosenTile = closestTiles[Math.floor(Math.random() * closestTiles.length)];
 
-        console.log(`敵出現: 全てのSマスが埋まっているため、パスマス (${chosenTile.x}, ${chosenTile.y}) に出現（Sマスからの距離: ${minDist}）`);
         return chosenTile;
     }
 
