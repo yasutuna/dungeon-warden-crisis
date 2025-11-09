@@ -374,6 +374,21 @@ class Monster {
 
     }
 
+    learnSpecificSkill(skill) {
+        if (!skill || !skill.id) {
+            return null;
+        }
+
+        if (this.skillMap.has(skill.id)) {
+            return null;
+        }
+
+        this.learnedSkills.push(skill);
+        this.skillMap.set(skill.id, skill);
+        this.applySkillEffect(skill);
+        return skill;
+    }
+
 
 
     selectSkillByRarity(skills) {

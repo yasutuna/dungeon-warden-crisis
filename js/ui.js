@@ -1304,11 +1304,286 @@ class UIManager {
                 item.appendChild(skillsDiv);
             }
 
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'monster-action-bar';
+
+            const addSkillBtn = document.createElement('button');
+            addSkillBtn.className = 'monster-action-btn add-skill-btn';
+            addSkillBtn.textContent = 'スキル追加';
+            addSkillBtn.addEventListener('click', (event) => {
+                event.stopPropagation();
+                this.showSkillSelectionForMonster(monster);
+            });
+
+            const levelUpBtn = document.createElement('button');
+            levelUpBtn.className = 'monster-action-btn level-up-btn';
+            levelUpBtn.textContent = 'レベルアップ';
+            levelUpBtn.addEventListener('click', (event) => {
+                event.stopPropagation();
+                this.showSoulInvestmentDialog(monster);
+            });
+
+            actionsDiv.appendChild(addSkillBtn);
+            actionsDiv.appendChild(levelUpBtn);
+            item.appendChild(actionsDiv);
+
             list.appendChild(item);
         }
     }
 
     // ログパネル
+
+    showSkillSelectionForMonster(monster) {
+        if (!monster) {
+            return;
+        }
+
+        const availableSkills = Object.values(SKILL_POOL).filter(skill => !monster.skillMap.has(skill.id));
+
+        const overlay = document.createElement('div');
+        overlay.className = 'skill-select-overlay';
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) {
+                overlay.remove();
+            }
+        });
+
+        const content = document.createElement('div');
+        content.className = 'skill-select-content';
+
+        const header = document.createElement('div');
+        header.className = 'skill-select-header';
+
+        const title = document.createElement('h3');
+        title.textContent = `${monster.name} Lv.${monster.level} - スキル追加`;
+
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'skill-select-close';
+        closeBtn.textContent = '✕';
+        closeBtn.addEventListener('click', () => overlay.remove());
+
+        header.appendChild(title);
+        header.appendChild(closeBtn);
+
+        const soulInfo = document.createElement('p');
+        soulInfo.className = 'skill-select-soul';
+        soulInfo.textContent = `所持ソウル: ${this.formatNumber(Math.floor(this.game.soul))}`;
+
+        const hint = document.createElement('p');
+        hint.className = 'skill-select-hint';
+        hint.textContent = '高額なソウルを消費して任意のスキルを習得できます。';
+
+        const grid = document.createElement('div');
+        grid.className = 'skill-card-grid';
+
+        const rarityOrder = { epic: 0, rare: 1, common: 2 };
+        availableSkills.sort((a, b) => {
+            const rarityDiff = (rarityOrder[a.rarity] ?? 99) - (rarityOrder[b.rarity] ?? 99);
+            if (rarityDiff !== 0) return rarityDiff;
+            return a.name.localeCompare(b.name, 'ja');
+        });
+
+        const rarityNames = {
+            common: 'コモン',
+            rare: 'レア',
+            epic: 'エピック'
+        };
+
+        content.appendChild(header);
+        content.appendChild(soulInfo);
+        content.appendChild(hint);
+
+        if (availableSkills.length === 0) {
+            const empty = document.createElement('p');
+            empty.className = 'empty-message';
+            empty.textContent = '全てのスキルを習得済みです。';
+            content.appendChild(empty);
+        } else {
+            for (const skill of availableSkills) {
+                const cost = this.game.calculateManualSkillCost(monster, skill);
+                const canAfford = this.game.soul >= cost;
+
+                const card = document.createElement('div');
+                card.className = `skill-card rarity-${skill.rarity}`;
+
+                const nameEl = document.createElement('div');
+                nameEl.className = 'skill-card-name';
+                nameEl.textContent = skill.name;
+
+                const rarityEl = document.createElement('span');
+                rarityEl.className = 'skill-card-rarity';
+                rarityEl.textContent = rarityNames[skill.rarity] || skill.rarity;
+
+                const descEl = document.createElement('p');
+                descEl.className = 'skill-card-desc';
+                descEl.textContent = skill.description;
+
+                const metaEl = document.createElement('div');
+                metaEl.className = 'skill-card-meta';
+                metaEl.textContent = `タイプ: ${skill.type === 'passive' ? 'パッシブ' : 'アクティブ'}`;
+
+                const costEl = document.createElement('div');
+                costEl.className = 'skill-card-cost';
+                costEl.textContent = `コスト: 魂 ${this.formatNumber(cost)}`;
+
+                const button = document.createElement('button');
+                button.className = 'skill-purchase-btn';
+                button.textContent = canAfford ? `魂 ${this.formatNumber(cost)} で購入` : 'ソウル不足';
+                button.disabled = !canAfford;
+                button.addEventListener('click', () => {
+                    const result = this.game.purchaseSkillForMonster(monster, skill);
+                    if (result.success) {
+                        overlay.remove();
+                        this.updateMonsterStatusList();
+                    } else if (result.reason === 'not_enough_soul') {
+                        button.classList.add('action-error');
+                        setTimeout(() => button.classList.remove('action-error'), 400);
+                    }
+                });
+
+                card.appendChild(nameEl);
+                card.appendChild(rarityEl);
+                card.appendChild(descEl);
+                card.appendChild(metaEl);
+                card.appendChild(costEl);
+                card.appendChild(button);
+
+                grid.appendChild(card);
+            }
+
+            content.appendChild(grid);
+        }
+
+        overlay.appendChild(content);
+        document.body.appendChild(overlay);
+    }
+
+    showSoulInvestmentDialog(monster) {
+        if (!monster) {
+            return;
+        }
+
+        const constants = SOUL_INVESTMENT_CONSTANTS;
+        const currentSoul = Math.floor(this.game.soul);
+        const minSpend = constants.MIN_SOUL_SPEND || 1;
+
+        if (currentSoul < minSpend) {
+            this.showMessage('ソウルが不足しています', 'error');
+            return;
+        }
+
+        const overlay = document.createElement('div');
+        overlay.className = 'skill-select-overlay soul-invest-overlay';
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) {
+                overlay.remove();
+            }
+        });
+
+        const content = document.createElement('div');
+        content.className = 'soul-invest-content';
+
+        const header = document.createElement('div');
+        header.className = 'skill-select-header';
+
+        const title = document.createElement('h3');
+        title.textContent = `${monster.name} Lv.${monster.level} - レベルアップ`;
+
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'skill-select-close';
+        closeBtn.textContent = '✕';
+        closeBtn.addEventListener('click', () => overlay.remove());
+
+        header.appendChild(title);
+        header.appendChild(closeBtn);
+
+        const soulInfo = document.createElement('p');
+        soulInfo.className = 'skill-select-soul';
+        soulInfo.textContent = `所持ソウル: ${this.formatNumber(currentSoul)}`;
+
+        const info = document.createElement('p');
+        info.className = 'soul-invest-info';
+        info.textContent = `ソウル1あたり ${constants.EXP_PER_SOUL} EXP を付与`;
+
+        const inputWrapper = document.createElement('div');
+        inputWrapper.className = 'soul-invest-input';
+
+        const inputLabel = document.createElement('label');
+        inputLabel.textContent = '消費するソウル';
+
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.min = minSpend;
+        input.max = currentSoul;
+        input.step = 1;
+        input.value = Math.max(minSpend, Math.min(currentSoul, minSpend * 5));
+
+        const helper = document.createElement('small');
+        helper.textContent = `最小: ${this.formatNumber(minSpend)} / 最大: ${this.formatNumber(currentSoul)}`;
+
+        const expPreview = document.createElement('div');
+        expPreview.className = 'soul-invest-preview';
+
+        const clampValue = (value) => {
+            if (!Number.isFinite(value)) {
+                return minSpend;
+            }
+            return Math.min(Math.max(value, minSpend), currentSoul);
+        };
+
+        const updatePreview = () => {
+            let numeric = Math.floor(Number(input.value));
+            numeric = clampValue(numeric);
+            input.value = numeric;
+            const expGain = numeric * constants.EXP_PER_SOUL;
+            expPreview.textContent = `獲得EXP: ${this.formatNumber(expGain)}`;
+        };
+
+        input.addEventListener('input', updatePreview);
+        updatePreview();
+
+        inputWrapper.appendChild(inputLabel);
+        inputWrapper.appendChild(input);
+        inputWrapper.appendChild(helper);
+
+        const actions = document.createElement('div');
+        actions.className = 'soul-invest-actions';
+
+        const confirmBtn = document.createElement('button');
+        confirmBtn.className = 'monster-action-btn level-up-btn';
+        confirmBtn.textContent = 'ソウルを投入';
+        confirmBtn.addEventListener('click', () => {
+            const amount = Math.floor(Number(input.value));
+            const result = this.game.investSoulForExp(monster, amount);
+            if (result.success) {
+                overlay.remove();
+                this.updateMonsterStatusList();
+            }
+        });
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'monster-action-btn cancel-btn';
+        cancelBtn.textContent = 'キャンセル';
+        cancelBtn.addEventListener('click', () => overlay.remove());
+
+        actions.appendChild(confirmBtn);
+        actions.appendChild(cancelBtn);
+
+        content.appendChild(header);
+        content.appendChild(soulInfo);
+        content.appendChild(info);
+        content.appendChild(inputWrapper);
+        content.appendChild(expPreview);
+        content.appendChild(actions);
+
+        overlay.appendChild(content);
+        document.body.appendChild(overlay);
+    }
+
+
+
+    // ���O�p�l��
+
     toggleLog() {
         const panel = this.elements.logPanel;
         if (panel.style.display === 'none') {
@@ -1432,6 +1707,20 @@ class UIManager {
             tooltip.remove();
         }
     }
+
+    formatNumber(value) {
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue)) {
+            return value;
+        }
+
+        try {
+            return numericValue.toLocaleString('ja-JP');
+        } catch (error) {
+            return numericValue;
+        }
+    }
+
 
     // ホバー時のユニット情報ツールチップ
     showUnitHoverTooltip(unit, mouseX, mouseY) {

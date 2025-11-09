@@ -941,6 +941,93 @@ class Game {
      * スライム分裂処理
      * ダメージを受けた時にSLIME_CONSTANTS.SPLIT_CHANCEで現在レベルのスライムを再生成
      */
+
+    calculateManualSkillCost(monster, skill) {
+        if (!monster || !skill || !SOUL_INVESTMENT_CONSTANTS) {
+            return Infinity;
+        }
+
+        const base = SOUL_INVESTMENT_CONSTANTS.SKILL_BASE_COST || 0;
+        const levelCost = monster.level * (SOUL_INVESTMENT_CONSTANTS.SKILL_PER_LEVEL_COST || 0);
+        const learnedCost = monster.learnedSkills.length * (SOUL_INVESTMENT_CONSTANTS.SKILL_PER_SKILL_COST || 0);
+        const rarityMultiplier = (SOUL_INVESTMENT_CONSTANTS.SKILL_RARITY_MULTIPLIERS &&
+            SOUL_INVESTMENT_CONSTANTS.SKILL_RARITY_MULTIPLIERS[skill.rarity]) || 1.5;
+        const rawCost = (base + levelCost + learnedCost) * rarityMultiplier;
+        const minCost = SOUL_INVESTMENT_CONSTANTS.SKILL_MIN_COST || 0;
+        return Math.max(minCost, Math.floor(rawCost));
+    }
+
+    purchaseSkillForMonster(monster, skill) {
+        if (!monster || !skill) {
+            return { success: false, reason: 'invalid_target' };
+        }
+
+        if (monster.skillMap.has(skill.id)) {
+            this.ui.showMessage('すでに習得済みのスキルです', 'warning');
+            return { success: false, reason: 'already_learned' };
+        }
+
+        const cost = this.calculateManualSkillCost(monster, skill);
+        if (!Number.isFinite(cost)) {
+            return { success: false, reason: 'cost_unavailable' };
+        }
+
+        if (this.soul < cost) {
+            this.ui.showMessage('ソウルが不足しています', 'error');
+            return { success: false, reason: 'not_enough_soul', cost };
+        }
+
+        const learned = monster.learnSpecificSkill(skill);
+        if (!learned) {
+            this.ui.showMessage('スキルの習得に失敗しました', 'error');
+            return { success: false, reason: 'learn_failed' };
+        }
+
+        this.soul -= cost;
+        this.ui.addLog(`${monster.name}がソウル${cost}を消費してスキル「${skill.name}」を習得しました！`, 'success');
+        this.ui.showMessage(`${monster.name}が${skill.name}を獲得！`, 'success');
+        return { success: true, cost };
+    }
+
+    investSoulForExp(monster, soulAmount) {
+        if (!monster) {
+            return { success: false, reason: 'invalid_target' };
+        }
+
+        const constants = SOUL_INVESTMENT_CONSTANTS;
+        const amount = Math.floor(soulAmount);
+
+        if (!Number.isFinite(amount) || amount < constants.MIN_SOUL_SPEND) {
+            this.ui.showMessage(`最低${constants.MIN_SOUL_SPEND}以上のソウルを指定してください`, 'warning');
+            return { success: false, reason: 'invalid_amount' };
+        }
+
+        if (amount > this.soul) {
+            this.ui.showMessage('ソウルが不足しています', 'error');
+            return { success: false, reason: 'not_enough_soul' };
+        }
+
+        const expGain = amount * constants.EXP_PER_SOUL;
+        const previousLevel = monster.level;
+
+        this.soul -= amount;
+        monster.gainExp(expGain);
+
+        this.ui.addLog(`${monster.name}に${expGain}の経験値を付与（ソウル${amount}消費）`, 'info');
+        this.ui.showMessage(`${monster.name}に${expGain}EXPを付与しました`, 'info');
+
+        if (monster.level > previousLevel) {
+            this.ui.addLog(`${monster.name}がLv.${previousLevel}→Lv.${monster.level}に成長しました！`, 'success');
+        }
+
+        return {
+            success: true,
+            expGain,
+            amountSpent: amount,
+            leveledUp: monster.level > previousLevel
+        };
+    }
+
     handleSlimeSplit(originalSlime) {
         const slimeData = MONSTER_DATA['slime'];
 
