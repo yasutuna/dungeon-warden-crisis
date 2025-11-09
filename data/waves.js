@@ -53,7 +53,7 @@ const WAVE_DATA = [
             { type: "ranger", count: 8, interval: 2 },
             { type: "knight", count: 3, interval: 4 }
         ],
-        unlocks: ["altar_lv1"],
+        unlocks: ["cursed_altar", "push_plate", "mine"],
         boss: false
     },
     // Wave 6
@@ -101,7 +101,7 @@ const WAVE_DATA = [
             { type: "siege_soldier", count: 6, interval: 3 },
             { type: "berserker", count: 8, interval: 2 }
         ],
-        unlocks: ["economy_research_1"]
+        unlocks: ["lightning_rod", "vampire_thorn", "gravity_well"]
     },
     // Wave 10 - 小ボス
     {
@@ -114,7 +114,7 @@ const WAVE_DATA = [
             { type: "warrior", count: 10, interval: 2 },
             { type: "necromancer", count: 3, interval: 5 }
         ],
-        unlocks: ["trap_upgrade_2"],
+        unlocks: ["mirror_trap", "poison_cloud", "time_warp"],
         boss: false
     },
     // Wave 11
@@ -139,7 +139,7 @@ const WAVE_DATA = [
             { type: "elementalist", count: 5, interval: 4 },
             { type: "paladin", count: 4, interval: 4 }
         ],
-        unlocks: ["monster_upgrade_2", "vampire"]
+        unlocks: ["vampire", "holy_barrier", "soul_harvester"]
     },
     // Wave 13
     {
@@ -151,7 +151,7 @@ const WAVE_DATA = [
             { type: "ranger", count: 12, interval: 2 },
             { type: "dragon_knight", count: 4, interval: 4 }
         ],
-        unlocks: ["economy_research_2", "cleric_skeleton"]
+        unlocks: ["cleric_skeleton", "acid_pool", "turret"]
     },
     // Wave 14
     {
@@ -164,7 +164,7 @@ const WAVE_DATA = [
             { type: "cleric", count: 5, interval: 4 },
             { type: "archmage", count: 3, interval: 5 }
         ],
-        unlocks: []
+        unlocks: ["harpy", "sky_knight", "electric_net"]
     },
     // Wave 15 - ボス
     {

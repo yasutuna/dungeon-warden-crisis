@@ -98,6 +98,10 @@ body {
     align-items: center;
 }
 
+.header-section:not(.header-controls) {
+    display: none;
+}
+
 .resource {
     display: flex;
     gap: 5px;
@@ -237,22 +241,58 @@ body {
 }
 
 #bottom-panel {
-    height: 120px;
     margin-top: 10px;
+    padding: var(--spacing-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
 }
 
-#selection-info {
-    color: #a0aec0;
+.status-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-lg);
+    align-items: center;
 }
 
-#selection-info h4 {
-    color: #fff;
-    margin-bottom: 10px;
+.status-entry {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-weight: bold;
+    color: var(--text-primary);
 }
 
-#selection-info p {
-    margin: 5px 0;
+.status-label {
     font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.status-value {
+    font-size: 18px;
+    color: var(--text-primary);
+}
+
+.status-value span {
+    color: inherit;
+}
+
+#selection-info,
+.selection-details {
+    color: #a0aec0;
+    min-height: 32px;
+}
+
+#selection-info h4,
+.selection-details h4 {
+    color: #fff;
+    margin-bottom: 6px;
+}
+
+#selection-info p,
+.selection-details p {
+    margin: 2px 0;
+    font-size: 13px;
 }
 
 .upgrade-btn {
