@@ -758,7 +758,7 @@ body {
     align-items: center;
     justify-content: center;
     padding: 20px;
-    z-index: 2000;
+    z-index: 11000;
 }
 
 .skill-select-content,
