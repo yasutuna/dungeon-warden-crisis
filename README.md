@@ -1,6 +1,5 @@
 # Dungeon Warden: Crisis (DWC)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![JavaScript](https://img.shields.io/badge/JavaScript-ES6+-yellow.svg)](https://www.ecma-international.org/)
 [![HTML5](https://img.shields.io/badge/HTML-5-orange.svg)](https://html.spec.whatwg.org/)
 
@@ -28,7 +27,6 @@
 - [📈 Wave進行](#-wave進行)
 - [💡 攻略のコツ](#-攻略のコツ)
 - [🛠️ 技術情報](#️-技術情報)
-- [📜 ライセンス](#-ライセンス)
 
 ---
 
@@ -359,12 +357,6 @@ open http://localhost:8000
 3. 変更をコミット (`git commit -m 'Add some AmazingFeature'`)
 4. ブランチにプッシュ (`git push origin feature/AmazingFeature`)
 5. Pull Requestを作成
-
----
-
-## 📜 ライセンス
-
-このプロジェクトはMITライセンスの下で公開されています - 詳細は [LICENSE](LICENSE) ファイルを参照してください。
 
 ---
 
